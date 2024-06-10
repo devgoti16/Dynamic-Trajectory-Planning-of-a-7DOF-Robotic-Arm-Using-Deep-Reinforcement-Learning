@@ -1,0 +1,72 @@
+<launch>
+
+  <!-- these are the arguments you can pass this launch file, for example paused:=true -->  
+  <arg name="kinova_robotType" default="j2s7s300"/>
+  <arg name="kinova_robotName" default="$(arg kinova_robotType)"/>
+  <arg name="paused" default="true"/>
+  <arg name="use_sim_time" default="true"/>
+  <arg name="gui" default="true"/>
+  <arg name="headless" default="false"/>
+  <arg name="debug" default="false"/>
+  <arg name="use_trajectory_controller" default="false"/>
+  <arg name="is7dof" default="false"/>
+  <arg name="rqt" default="false"/>
+  <arg name="has2finger" default="false"/>
+  <arg name="description_name" default="robot_description"/> <!-- allows remapping of robot_description into a namespace -->
+
+    <!-- Load joint controller configurations from YAML file to parameter server -->
+  <rosparam file="$(find kinova_control)/config/$(arg kinova_robotName)_control.yaml" command="load"/>
+
+
+  <!-- Load the URDF into the ROS Parameter Server -->
+  <param name="robot_description"
+    command="$(find xacro)/xacro --inorder '$(find kinova_description)/urdf/$(arg kinova_robotType)_standalone.xacro'" />
+
+
+  <!-- We resume the logic in empty_world.launch, changing only the name of the world to be launched -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(find kinova_gazebo)/worlds/jaco.world"/>
+    <arg name="debug" value="$(arg debug)" />
+    <arg name="gui" value="$(arg gui)" />
+    <arg name="paused" value="$(arg paused)"/>s
+    <arg name="use_sim_time" value="$(arg use_sim_time)"/>
+    <arg name="headless" value="$(arg headless)"/>
+  </include>
+
+  <!-- Load the URDF into the ROS Parameter Server -->
+  <param name="robot_description"
+    command="$(find xacro)/xacro --inorder '$(find kinova_description)/urdf/$(arg kinova_robotType)_standalone.xacro'" />
+
+  <node name="urdf_spawner" pkg="gazebo_ros" type="spawn_model" respawn="false" output="screen"
+    args="-urdf -model $(arg kinova_robotName) -param robot_description
+        -J $(arg kinova_robotType)_joint_1 3.14
+        -J $(arg kinova_robotType)_joint_2 3.14
+        -J $(arg kinova_robotType)_joint_3 1.5
+        -J $(arg kinova_robotType)_joint_4 2.0
+        -J $(arg kinova_robotType)_joint_5 1.0
+        -J $(arg kinova_robotType)_joint_6 0.0
+        -J $(arg kinova_robotType)_joint_7 0.0
+        -J $(arg kinova_robotType)_joint_finger_1 1.0
+        -J $(arg kinova_robotType)_joint_finger_2 1.0
+        -J $(arg kinova_robotType)_joint_finger_3 1.0" />
+
+  <node name="$(arg kinova_robotName)_joints_controller" pkg="controller_manager" type="spawner" respawn="false"
+        output="screen" ns="$(arg kinova_robotName)" unless="$(arg has2finger)"
+       args="joint_1_velocity_controller joint_2_velocity_controller  
+               joint_3_velocity_controller joint_4_velocity_controller
+               joint_5_velocity_controller joint_6_velocity_controller joint_7_velocity_controller
+               finger_2_position_controller finger_1_position_controller 
+               finger_3_position_controller finger_tip_1_position_controller
+               finger_tip_2_position_controller finger_tip_3_position_controller
+               joint_state_controller"/> 
+<!-- 
+  convert joint states to TF transforms for rviz, etc -->
+  <node name="$(arg kinova_robotName)_robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"
+        respawn="true" output="screen">
+    <remap from="/joint_states" to="/$(arg kinova_robotName)/joint_states"/>
+    <remap from="robot_description" to="$(arg description_name)"/>
+  </node>
+
+ 
+
+</launch>
