@@ -1,6 +1,9 @@
+#!/home/dev/anaconda3/envs/myrosenv/bin/python
+
 import rospy
 #import gym
 import tensorflow as tf
+from collections import deque
 import numpy as np
 import random
 import matplotlib.pyplot as plt
@@ -8,7 +11,8 @@ import matplotlib.pyplot as plt
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
 import time
-import torch
+from std_srvs.srv import Empty
+#import torch
 # import torch.nn as nn
 # import torch.nn.functional as F
 #from numpy import inf
@@ -63,10 +67,10 @@ class Jaco2Env():
     def __init__(self):
         port = "11311"
         self.launfile = "velocity_control.launch"
-        subprocess.Popen(["roscore"])
+        subprocess.Popen(["roscore","-p",port])
         print("roscore launched!")
         rospy.init_node('dqn_controller')
-        subprocess.Popen(["roslaunch","-p", "11312","kinova_scripts","velocity_control.launch"])
+        subprocess.Popen(["roslaunch","-p", "11311","kinova_scripts","velocity_control.launch"])
         print("Gazebo Launched")
         self.joint_state_sub = rospy.Subscriber('/joint_states', JointState, self.joint_state_callback)
         self.joint_vel_pub = rospy.Publisher('/j2s7s300/joint_velocity_controller/command', JointState, queue_size=10)
@@ -176,13 +180,14 @@ class Jaco2Env():
             self.pause()
         except (rospy.ServiceException) as e:
             print("/gazebo/pause_physics service call failed")
-        current_state = self.state
+        current_state = state
         end_effector_position = self.compute_position(self.state[:7])
         return np.concatenate((current_state, end_effector_position))
 
 
 class DQNAgent:
     def __init__(self):
+        self.learning_rate = 0.001
         self.model = self.build_model()
         self.target_model = self.build_model()
         self.target_model.set_weights(self.model.get_weights())
@@ -204,7 +209,8 @@ class DQNAgent:
     def act(self, state):
         if np.random.rand() <= self.epsilon:
             return random.choice(range(-3, 4))  # Action range [-3, 3]
-        state = torch.FloatTensor(state).unsqueeze(0)
+        state_tensor = tf.convert_to_tensor(state, dtype=tf.float32)
+        state= tf.expand_dims(state_tensor, axis=0)
         act_values = agent.model.predict(state)
         return act_values.detach().numpy()
     
@@ -242,9 +248,11 @@ if __name__ == '__main__':
     action_size = 7
     agent = DQNAgent()
     env = Jaco2Env()
-    time.sleep(5)
-    torch.manual_seed(seed)
+    time.sleep(10)
+    #tf.set_random_seed(seed)
     np.random.seed(seed)
+
+    print("training started")
 
     # replay_buffer = ReplayBuffer(buffer_size,seed)
 
@@ -254,7 +262,9 @@ if __name__ == '__main__':
         done = False
         for time in range(max_timesteps):
             action = agent.act(state)
+            print("step will be taken")
             next_state, reward, done, _ = env.step(action)
+            print("step taken and reward is being calculate")
             reward = reward if not done else -10
             next_state = np.reshape(next_state, [1, 21])
             agent.remember(state, action, reward, next_state, done)
