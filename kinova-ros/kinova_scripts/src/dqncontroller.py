@@ -1,12 +1,12 @@
-#!/usr/bin/env python
+#!/home/dev/anaconda3/envs/myrosenv/bin/python
 
 import rospy
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.optim as optim
+#import torch
+# import torch.nn as nn
+# import torch.optim as optim
 import random
 from collections import deque
 from geometry_msgs.msg import Pose

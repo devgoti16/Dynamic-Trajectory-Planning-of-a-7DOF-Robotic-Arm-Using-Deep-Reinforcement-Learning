@@ -3,6 +3,8 @@
 import rospy
 #import gym
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 from collections import deque
 import numpy as np
 import random
@@ -77,9 +79,14 @@ class Jaco2Env():
         self.unpause = rospy.ServiceProxy("/gazebo/unpause_physics",Empty)
         self.pause = rospy.ServiceProxy("/gazebo/pause_physics",Empty)
         self.reset_proxy = rospy.ServiceProxy("/gazebo/reset_world",Empty)
+        print("all service and topics called")
+        self.states = np.zeros(14)
+        self.d_parameters = [0.2755,0.2050,0.2050,0.2073,0.1038,0.1038,0.1600,0.0098] #d1,d2,d3,d4,d5,d6,d7,e2  
+        
 
     def joint_state_callback(self, msg):
-        self.state[:14] = np.concatenate(((np.array(msg.position)[:7]), (np.array(msg.velocity)[:7])))
+        self.states = np.concatenate(((np.array(msg.position)[:7]), (np.array(msg.velocity)[:7])))
+        print(self.states)
 
     def update_goal_position(self):
         self.goal_position += np.random.uniform(low=-0.05, high=0.05, size=3)  # Random continuous motion
@@ -110,7 +117,7 @@ class Jaco2Env():
         ] #alpha,d,a,thetea
         T_0_n = np.eye(4)
         transformation = []
-        for i, (alpha,d, a, theta) in enumerate(dh_parameters):
+        for (alpha,d, a, theta) in dh_parameters:
             T_i = self.dh_transformation(alpha, d, a, theta)
             T_0_n = np.dot(T_0_n, T_i)
             # transformation.append(T_0_n)
@@ -150,8 +157,8 @@ class Jaco2Env():
         except (rospy.ServiceException) as e:
             print("/gazebo/pause_physics service call failed")
         #self.update_goal_position()  # Update the goal position continuously
-        end_effector_position = self.compute_position(state[:7])
-        next_state = np.concatenate((self.state[:14], end_effector_position))
+        end_effector_position = self.compute_position(self.states[:7])
+        next_state = np.concatenate((self.states, end_effector_position))
         distance_to_goal = np.linalg.norm(end_effector_position - self.goal_position)     
         reward = self.calculate_reward(distance_to_goal, action)
         done = distance_to_goal < 0.05  # Close enough to goal
@@ -169,6 +176,7 @@ class Jaco2Env():
         #self.update_goal_position()  # Publish initial goal position
         # Initialize goal position at a random position within the workspace
         self.goal_position = np.random.uniform(low=-3, high=3, size=3)
+        print("goal position :" , self.goal_position)
         rospy.wait_for_service("/gazebo/unpause_physics")
         try:
             self.unpause()
@@ -180,8 +188,8 @@ class Jaco2Env():
             self.pause()
         except (rospy.ServiceException) as e:
             print("/gazebo/pause_physics service call failed")
-        current_state = state
-        end_effector_position = self.compute_position(self.state[:7])
+        current_state = self.states
+        end_effector_position = self.compute_position(self.states[:7])
         return np.concatenate((current_state, end_effector_position))
 
 
@@ -196,7 +204,6 @@ class DQNAgent:
         self.epsilon = 1.0
         self.epsilon_decay = 0.995
         self.epsilon_min = 0.01
-        self.learning_rate = 0.001
 
     def build_model(self):
         model = tf.keras.Sequential()
@@ -234,50 +241,62 @@ class DQNAgent:
         self.target_model.set_weights(self.model.get_weights())
 
 if __name__ == '__main__':
+        
     
-    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
-    episodes = 2000
-    batch_size = 32
-    max_timesteps = 500
-    scores = []
-    buffer_size = 10000
-    save_model = True
-    load_model = False
-    seed = 0
-    state_size = 17
-    action_size = 7
-    agent = DQNAgent()
-    env = Jaco2Env()
-    time.sleep(10)
-    #tf.set_random_seed(seed)
-    np.random.seed(seed)
+    while not rospy.is_shutdown():
 
-    print("training started")
+    
+        #device = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
+        episodes = 2000
+        batch_size = 32
+        max_timesteps = 500
+        scores = []
+        buffer_size = 10000
+        save_model = True
+        load_model = False
+        seed = 0
+        state_size = 17
+        action_size = 7
+        agent = DQNAgent()
+        env = Jaco2Env()
+        time.sleep(13)
+        #tf.set_random_seed(seed)
+        np.random.seed(seed)
 
-    # replay_buffer = ReplayBuffer(buffer_size,seed)
+        print("going for training")
 
+        # replay_buffer = ReplayBuffer(buffer_size,seed)
+        for e in range(episodes):
+            state = env.reset()
+            print(" environment has been reseted")
+            done = False
+            for time in range(max_timesteps):
+                action = agent.act(state)
+                print("step will be taken")
+                next_state, reward, done, _ = env.step(action)
+                print("step taken and reward is being calculate")
+                reward = reward if not done else -10
+                next_state = np.reshape(next_state, [1, 21])
+                agent.remember(state, action, reward, next_state, done)
+                print("stored in replay buffer")
+                state = next_state
+                if done:
+                    agent.update_target_model()
+                    scores.append(time)
+                    print(f"episode: {e}/{episodes}, score: {time}, e: {agent.epsilon:.2}")
+                    break
+                if len(agent.memory) > batch_size:
+                    agent.replay(batch_size)
+            print("maximum timesteps achieved")
 
-    for e in range(episodes):
-        state = env.reset()
-        done = False
-        for time in range(max_timesteps):
-            action = agent.act(state)
-            print("step will be taken")
-            next_state, reward, done, _ = env.step(action)
-            print("step taken and reward is being calculate")
-            reward = reward if not done else -10
-            next_state = np.reshape(next_state, [1, 21])
-            agent.remember(state, action, reward, next_state, done)
-            state = next_state
-            if done:
-                agent.update_target_model()
-                scores.append(time)
-                print(f"episode: {e}/{episodes}, score: {time}, e: {agent.epsilon:.2}")
-                break
-            if len(agent.memory) > batch_size:
-                agent.replay(batch_size)
+        # plt.plot(scores)
+        # plt.xlabel('Episode')
+        # plt.ylabel('Score')
+        # plt.show()
 
-    plt.plot(scores)
-    plt.xlabel('Episode')
-    plt.ylabel('Score')
-    plt.show()
+    # except rospy.ROSInterruptException:
+    #     pass
+    # except Exception as e :
+    #     rospy.logerr("An error occurred : %s", e)
+    # finally :
+    #     rospy.signal_shutdown("Node terminated due to error")
