@@ -11,7 +11,7 @@ import random
 import matplotlib.pyplot as plt
 #from gym import spaces
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Float64
 import time
 from std_srvs.srv import Empty
 #import torch
@@ -75,7 +75,13 @@ class Jaco2Env():
         subprocess.Popen(["roslaunch","-p", "11311","kinova_scripts","velocity_control.launch"])
         print("Gazebo Launched")
         self.joint_state_sub = rospy.Subscriber('/joint_states', JointState, self.joint_state_callback)
-        self.joint_vel_pub = rospy.Publisher('/j2s7s300/joint_velocity_controller/command', JointState, queue_size=10)
+        self.joint_vel_pub1 = rospy.Publisher('/j2s7s300/joint_1_velocity_controller/command', Float64, queue_size=1)
+        self.joint_vel_pub2 = rospy.Publisher('/j2s7s300/joint_2_velocity_controller/command', Float64, queue_size=1)
+        self.joint_vel_pub3 = rospy.Publisher('/j2s7s300/joint_3_velocity_controller/command', Float64, queue_size=1)     
+        self.joint_vel_pub4 = rospy.Publisher('/j2s7s300/joint_4_velocity_controller/command', Float64, queue_size=1)     
+        self.joint_vel_pub5 = rospy.Publisher('/j2s7s300/joint_5_velocity_controller/command', Float64, queue_size=1)     
+        self.joint_vel_pub6 = rospy.Publisher('/j2s7s300/joint_6_velocity_controller/command', Float64, queue_size=1)     
+        self.joint_vel_pub7 = rospy.Publisher('/j2s7s300/joint_7_velocity_controller/command', Float64, queue_size=1)             
         self.unpause = rospy.ServiceProxy("/gazebo/unpause_physics",Empty)
         self.pause = rospy.ServiceProxy("/gazebo/pause_physics",Empty)
         self.reset_proxy = rospy.ServiceProxy("/gazebo/reset_world",Empty)
@@ -116,14 +122,16 @@ class Jaco2Env():
             (np.radians(180), 0, -(self.d_parameters[5]+self.d_parameters[6]),  joint_angles[6])
         ] #alpha,d,a,thetea
         T_0_n = np.eye(4)
-        transformation = []
+        # print(dh_parameters)
+        #transformation = []
         for (alpha,d, a, theta) in dh_parameters:
+            print(alpha,d,a,theta)
             T_i = self.dh_transformation(alpha, d, a, theta)
             T_0_n = np.dot(T_0_n, T_i)
             # transformation.append(T_0_n)
         return T_0_n
     
-    def dh_transformation(alpha, d, a, theta):
+    def dh_transformation(self,alpha, d, a, theta):
         return np.array([
             [np.cos(theta), -np.sin(theta)*np.cos(alpha), np.sin(theta)*np.sin(alpha), a*np.cos(theta)],
             [np.sin(theta), np.cos(theta)*np.cos(alpha), -np.cos(theta)*np.sin(alpha), a*np.sin(theta)],
@@ -142,9 +150,27 @@ class Jaco2Env():
     
     
     def step(self, action): #perform an action and read a new state
-        joint_vel_msg = Float64MultiArray()
-        joint_vel_msg.data = action
-        self.joint_vel_pub.publish(joint_vel_msg)
+        joint_vel_msg_1 = Float64()
+        joint_vel_msg_2 = Float64()
+        joint_vel_msg_3 = Float64()
+        joint_vel_msg_4 = Float64()
+        joint_vel_msg_5 = Float64()
+        joint_vel_msg_6 = Float64()
+        joint_vel_msg_7 = Float64()
+        joint_vel_msg_1.data = action[0]
+        joint_vel_msg_2.data = action[1] 
+        joint_vel_msg_3.data = action[2] 
+        joint_vel_msg_4.data = action[3] 
+        joint_vel_msg_5.data = action[4] 
+        joint_vel_msg_6.data = action[5] 
+        joint_vel_msg_7.data = action[6]  
+        self.joint_vel_pub1.publish(joint_vel_msg_1)
+        self.joint_vel_pub2.publish(joint_vel_msg_2)
+        self.joint_vel_pub3.publish(joint_vel_msg_3)
+        self.joint_vel_pub4.publish(joint_vel_msg_4)
+        self.joint_vel_pub5.publish(joint_vel_msg_5)
+        self.joint_vel_pub6.publish(joint_vel_msg_6)
+        self.joint_vel_pub7.publish(joint_vel_msg_7)
         rospy.wait_for_service("/gazebo/unpause_physics")
         try:
             self.unpause()
@@ -215,7 +241,8 @@ class DQNAgent:
         
     def act(self, state):
         if np.random.rand() <= self.epsilon:
-            return random.choice(range(-3, 4))  # Action range [-3, 3]
+            print("random action")
+            return np.random.uniform(-1,1,size=7)
         state_tensor = tf.convert_to_tensor(state, dtype=tf.float32)
         state= tf.expand_dims(state_tensor, axis=0)
         act_values = agent.model.predict(state)
@@ -259,7 +286,7 @@ if __name__ == '__main__':
         action_size = 7
         agent = DQNAgent()
         env = Jaco2Env()
-        time.sleep(13)
+        time.sleep(25)
         #tf.set_random_seed(seed)
         np.random.seed(seed)
 
@@ -267,11 +294,15 @@ if __name__ == '__main__':
 
         # replay_buffer = ReplayBuffer(buffer_size,seed)
         for e in range(episodes):
+            print("epsiode :", e)
             state = env.reset()
+            print("first state state :", state)
             print(" environment has been reseted")
             done = False
             for time in range(max_timesteps):
+                print(time)
                 action = agent.act(state)
+                print(action)
                 print("step will be taken")
                 next_state, reward, done, _ = env.step(action)
                 print("step taken and reward is being calculate")
