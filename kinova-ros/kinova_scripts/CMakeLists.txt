@@ -165,6 +165,8 @@ catkin_install_python(PROGRAMS
   src/velocitycontrol.py
   src/dqncontroller.py
   src/dqn_controller.py
+  src/dqn_controller_torch.py
+  src/dqn.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
  )
 

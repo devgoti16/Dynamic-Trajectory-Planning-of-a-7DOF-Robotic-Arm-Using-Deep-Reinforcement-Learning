@@ -22,7 +22,7 @@ import subprocess
 from os import path
 #import math
 
-TIME_DELTA = 0.1
+
 
 # def evaluate(network, epoch, eval_episodes = 20):
 #     avg_reward = 0.0
@@ -91,8 +91,9 @@ class Jaco2Env():
         
 
     def joint_state_callback(self, msg):
+        msg = JointState()
         self.states = np.concatenate(((np.array(msg.position)[:7]), (np.array(msg.velocity)[:7])))
-        print(self.states)
+        print("callback data : ",self.states)
 
     def update_goal_position(self):
         self.goal_position += np.random.uniform(low=-0.05, high=0.05, size=3)  # Random continuous motion
@@ -176,7 +177,8 @@ class Jaco2Env():
             self.unpause()
         except (rospy.ServiceException) as e:
             print("/gazebo/unpause_physics service call failed")            
-        time.sleep(TIME_DELTA)
+        # time.sleep(TIME_DELTA)
+        rate.sleep()
         rospy.wait_for_service("/gazebo/pause_physics")
         try:
             self.pause()
@@ -186,10 +188,12 @@ class Jaco2Env():
         end_effector_position = self.compute_position(self.states[:7])
         next_state = np.concatenate((self.states, end_effector_position))
         distance_to_goal = np.linalg.norm(end_effector_position - self.goal_position)     
-        reward = self.calculate_reward(distance_to_goal, action)
+        reward = self.calculate_reward(distance_to_goal)
         done = distance_to_goal < 0.05  # Close enough to goal
         if done:
             reward += 50  # Large reward for reaching the goal
+        print("reward : ",reward)
+        print("next state: ",next_state)
         return next_state, reward, done, {}
 
     def reset(self):
@@ -208,7 +212,8 @@ class Jaco2Env():
             self.unpause()
         except (rospy.ServiceException) as e:
             print("/gazebo/unpause_physics service call failed")   
-        time.sleep(TIME_DELTA)
+        # time.sleep(TIME_DELTA)
+        rate.sleep()
         rospy.wait_for_service("/gazebo/pause_physics")
         try:
             self.pause()
@@ -233,7 +238,7 @@ class DQNAgent:
 
     def build_model(self):
         model = tf.keras.Sequential()
-        model.add(tf.keras.layers.Dense(256, input_dim=21, activation='relu'))
+        model.add(tf.keras.layers.Dense(256, input_dim=17, activation='relu'))
         model.add(tf.keras.layers.Dense(64, activation='relu'))
         model.add(tf.keras.layers.Dense(7, activation='tanh'))
         model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(lr=self.learning_rate))
@@ -269,12 +274,14 @@ class DQNAgent:
 
 if __name__ == '__main__':
         
-    
-    while not rospy.is_shutdown():
+    try:
 
-    
-        #device = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
+        # while not rospy.is_shutdown():
+
+        
+            #device = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
         episodes = 2000
+        TIME_DELTA = 0.1
         batch_size = 32
         max_timesteps = 500
         scores = []
@@ -286,7 +293,8 @@ if __name__ == '__main__':
         action_size = 7
         agent = DQNAgent()
         env = Jaco2Env()
-        time.sleep(25)
+        time.sleep(15)
+        rate = rospy.Rate(10)
         #tf.set_random_seed(seed)
         np.random.seed(seed)
 
@@ -296,25 +304,25 @@ if __name__ == '__main__':
         for e in range(episodes):
             print("epsiode :", e)
             state = env.reset()
-            print("first state state :", state)
+            print("first state :", state)
             print(" environment has been reseted")
             done = False
-            for time in range(max_timesteps):
-                print(time)
+            for times in range(max_timesteps):
+                print(times)
                 action = agent.act(state)
                 print(action)
                 print("step will be taken")
                 next_state, reward, done, _ = env.step(action)
                 print("step taken and reward is being calculate")
                 reward = reward if not done else -10
-                next_state = np.reshape(next_state, [1, 21])
+                next_state = np.reshape(next_state, [1, 17])
                 agent.remember(state, action, reward, next_state, done)
                 print("stored in replay buffer")
                 state = next_state
                 if done:
                     agent.update_target_model()
-                    scores.append(time)
-                    print(f"episode: {e}/{episodes}, score: {time}, e: {agent.epsilon:.2}")
+                    scores.append(times)
+                    print(f"episode: {e}/{episodes}, score: {times}, e: {agent.epsilon:.2}")
                     break
                 if len(agent.memory) > batch_size:
                     agent.replay(batch_size)
@@ -324,9 +332,10 @@ if __name__ == '__main__':
         # plt.xlabel('Episode')
         # plt.ylabel('Score')
         # plt.show()
+        rospy.spin()
 
-    # except rospy.ROSInterruptException:
-    #     pass
+    except rospy.ROSInterruptException:
+            rospy.loginfo("Node closed")
     # except Exception as e :
     #     rospy.logerr("An error occurred : %s", e)
     # finally :
