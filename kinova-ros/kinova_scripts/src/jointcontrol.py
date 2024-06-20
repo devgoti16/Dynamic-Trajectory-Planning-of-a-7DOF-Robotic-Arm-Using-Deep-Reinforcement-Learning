@@ -8,7 +8,7 @@ def publish_joint_positions():
     rospy.init_node('joint_position_publisher', anonymous=True)
     #-------------------------------------
     # pub = rospy.Publisher('/j2s7s300/joint_states', JointState, queue_size=10)
-    # rate = rospy.Rate(10)  # 10hz
+    #rate = rospy.Rate(10)  # 10hz
     # joint_state = JointState()
     # joint_state.name = ['j2s7s300_joint_1', 'j2s7s300_joint_2', 'j2s7s300_joint_3', 'j2s7s300_joint_4', 'j2s7s300_joint_5', 'j2s7s300_joint_6', 'j2s7s300_joint_7']
     # joint_state.position = [0.5, 1.0, -0.5, 1.0, 0.0, -1.0, 0.5]
@@ -22,8 +22,8 @@ def publish_joint_positions():
     #----------------------------------------------------------
 
     #      this makes the arm joint to have particular angle
-    # pub = rospy.Publisher('/j2s7s300/joint_1_position_controller/command',Float64, queue_size= 10)
-    # rate = rospy.Rate(10)  # 10hz
+    #pub = rospy.Publisher('/j2s7s300/joint_4_position_controller/command',Float64, queue_size= 10)
+    rate = rospy.Rate(10)  # 10hz
     # data = Float64()
     # data = -3.14
     # for i in range(40):
@@ -37,6 +37,7 @@ def publish_joint_positions():
     # def callbackf(msg):
     #     angles = msg.position
     #     velocity = msg.velocity
+    #     print(velocity.type)
 
     #     print('angles')
     #     print(angles)
@@ -45,15 +46,15 @@ def publish_joint_positions():
 
 
     # sub = rospy.Subscriber('/j2s7s300/joint_states', JointState, callbackf)
-    #rospy.spin()
+    # rospy.spin()
 
-    pub1 = rospy.Publisher('/j2s7s300/joint_2_velocity_controller/command',Float64, queue_size= 10)
-    pub2 = rospy.Publisher('/j2s7s300/joint_2_velocity_controller/command',Float64, queue_size= 10)
-    pub3 = rospy.Publisher('/j2s7s300/joint_2_velocity_controller/command',Float64, queue_size= 10)
-    pub4 = rospy.Publisher('/j2s7s300/joint_2_velocity_controller/command',Float64, queue_size= 10)
-    pub5 = rospy.Publisher('/j2s7s300/joint_2_velocity_controller/command',Float64, queue_size= 10)
-    pub6 = rospy.Publisher('/j2s7s300/joint_2_velocity_controller/command',Float64, queue_size= 10)
-    pub7 = rospy.Publisher('/j2s7s300/joint_2_velocity_controller/command',Float64, queue_size= 10)
+    # pub1 = rospy.Publisher('/j2s7s300/joint_2_velocity_controller/command',Float64, queue_size= 10)
+    # pub2 = rospy.Publisher('/j2s7s300/joint_2_velocity_controller/command',Float64, queue_size= 10)
+    # pub3 = rospy.Publisher('/j2s7s300/joint_2_velocity_controller/command',Float64, queue_size= 10)
+    pub4 = rospy.Publisher('/j2s7s300/joint_4_velocity_controller/command',Float64, queue_size= 10)
+    # pub5 = rospy.Publisher('/j2s7s300/joint_2_velocity_controller/command',Float64, queue_size= 10)
+    # pub6 = rospy.Publisher('/j2s7s300/joint_2_velocity_controller/command',Float64, queue_size= 10)
+    # pub7 = rospy.Publisher('/j2s7s300/joint_2_velocity_controller/command',Float64, queue_size= 10)
     rate = rospy.Rate(10)  # 10hz
     data = Float64()
     data = 0.0
@@ -72,23 +73,22 @@ def publish_joint_positions():
     # pub1.publish(data)
     # pub2.publish(data)
     # pub3.publish(data)
-    # pub4.publish(data)
+    pub4.publish(data)
     # pub5.publish(data)
     # pub6.publish(data)
     # pub7.publish(data)
-    while not rospy.is_shutdown():
-        rospy.loginfo(data)
-        pub1.publish(data)
-        pub2.publish(data)
-        pub3.publish(data)
-        pub4.publish(data)
-        pub5.publish(data)
-        pub6.publish(data)
-        pub7.publish(data)
+    # while not rospy.is_shutdown():
+    #     rospy.loginfo(data)
+    #     pub1.publish(data)
+    #     pub2.publish(data)
+    #     pub3.publish(data)
+    #     pub4.publish(data)
+    #     pub5.publish(data)
+    #     pub6.publish(data)
+    #     pub7.publish(data)
 
-        rate.sleep()
+    
 
-    rospy.spin()
 
 
 
