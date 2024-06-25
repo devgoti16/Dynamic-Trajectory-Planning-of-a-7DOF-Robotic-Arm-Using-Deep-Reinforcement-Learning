@@ -198,6 +198,17 @@ j2s7s300:
     publish_rate: 50
     type: joint_state_controller/JointStateController
 
+
+
+
+
+
+
+
+
+
+
+
   finger_1_velocity_controller:
     joint: j2s7s300_joint_finger_1
     pid:
@@ -245,28 +256,28 @@ j2s7s300:
     pid:
       d: 0
       i: 0
-      p: 2000
+      p: 200
     type: effort_controllers/JointVelocityController
   joint_2_velocity_controller:
     joint: j2s7s300_joint_2
     pid:
       d: 0
       i: 0
-      p: 3000
+      p: 300
     type: effort_controllers/JointVelocityController
   joint_3_velocity_controller:
     joint: j2s7s300_joint_3
     pid:
       d: 0
       i: 0
-      p: 1000
+      p: 100
     type: effort_controllers/JointVelocityController
   joint_4_velocity_controller:
     joint: j2s7s300_joint_4
     pid:
       d: 0
       i: 0
-      p: 2000
+      p: 200
     type: effort_controllers/JointVelocityController
   joint_5_velocity_controller:
     joint: j2s7s300_joint_5
