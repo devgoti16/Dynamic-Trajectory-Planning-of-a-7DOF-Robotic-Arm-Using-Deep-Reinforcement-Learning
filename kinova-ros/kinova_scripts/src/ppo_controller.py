@@ -2,9 +2,6 @@
 
 import rospy
 import gym
-# import tensorflow as tf
-# from tensorflow import keras
-# from tensorflow.keras import layers
 from collections import deque
 import numpy as np
 import random
@@ -221,9 +218,7 @@ class ActorNetwork(nn.Module):
         mean = self.mean(x)
         std = torch.log_std.exp().expand_as(mean)
         return mean, std
-    
-    def save_checkpoint(self):
-        torch.save(self.state_dict(),self.checkpoint_file)
+
 
 
 class CriticNetwork(nn.Module):
@@ -244,7 +239,7 @@ class CriticNetwork(nn.Module):
 
 
 class Agent:
-    def __init__ (self,state_dim,actor_dim, lr = 3e-4, gamma = 0.99, eps_clip = 0.2,epsilon = 0.2,lmbda = 0.95, epoch = 10, batch_size = 64):
+    def __init__ (self, state_dim, actor_dim, lr = 0.002, gamma = 0.99, eps_clip = 0.2,epsilon = 0.2,lmbda = 0.95, epoch = 10, batch_size = 64):
         self.actor_network = ActorNetwork(state_dim,actor_dim)
         self.critic_network = CriticNetwork(state_dim)
         self.actor_optimizer = optim.Adam(self.actor_network.parameters(),lr = lr)
@@ -264,7 +259,7 @@ class Agent:
     def select_action(self,state):
         state = torch.FloatTensor(state).unsqueeze(0)
         mean, std = self.actor_network(state)
-        dist = Normal(mean,std)
+        dist = MultivariateNormal(mean,std)
         action = dist.sample()
         action_log_prob = dist.log_prob(action).sum(dim=1)
         return action.detach().numpy()[0],action_log_prob.detach()
@@ -292,7 +287,7 @@ class Agent:
         next_values = self.critic_network(next_states).squeeze()
         advantages = self.compute_advantages(rewards, values.detach().numpy(), next_values.detach().numpy(), dones)
         advantages = torch.FloatTensor(advantages)
-        returns = advantages - values
+        returns = advantages + values
 
         for _ in range(self.epochs):
             for i in range(0, len(states), self.batch_size):
@@ -336,8 +331,8 @@ if __name__ == '__main__':
 
 
     env = Jaco2Env()
-    print("observation space dimension ::",env.observation_space.shape[0])
-    print("action space dimension ::",env.action_space.shape[0])
+    print("observation space dimension :",env.observation_space.shape[0])
+    print("action space dimension :",env.action_space.shape[0])
     agent = Agent(state_dim=env.observation_space.shape[0], action_dim=env.action_space.shape[0])
     time.sleep(15)
     actor_lr = 0.001
