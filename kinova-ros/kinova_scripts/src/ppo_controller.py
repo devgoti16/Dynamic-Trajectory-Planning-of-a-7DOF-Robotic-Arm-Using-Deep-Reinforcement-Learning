@@ -66,12 +66,13 @@ class Jaco2Env(gym.Env):
         # rospy.spin()
         print("all service and topics called")
         self.d_parameters = [0.2755,0.2050,0.2050,0.2073,0.1038,0.1038,0.1600,0.0098] #d1,d2,d3,d4,d5,d6,d7,e2  
-
+        self.states = None
 
     def joint_state_callback(self,msg):
         angles = msg.position[:7]
         velocities = msg.velocity[:7]
         self.states = angles + velocities
+        print("callback details:",self.states)
 
     def update_goal_position(self):
         self.goal_position += np.random.uniform(low=-0.05, high=0.05, size=3)  # Random continuous motion
@@ -161,7 +162,8 @@ class Jaco2Env(gym.Env):
             self.pause()
         except (rospy.ServiceException) as e:
             print("/gazebo/pause_physics service call failed")
-        self.update_goal_position()  # Update the goal position continuously
+        #self.update_goal_position() 
+        print("current state taken from topic:", self.states) # Update the goal position continuously
         end_effector_position = self.compute_position(self.states[:7])
         next_state = np.concatenate((self.states, end_effector_position))
         distance_to_goal = np.linalg.norm(end_effector_position - self.goal_position)     
@@ -198,6 +200,7 @@ class Jaco2Env(gym.Env):
         except (rospy.ServiceException) as e:
             print("/gazebo/pause_physics service call failed")
         current_state = self.states
+        print("current state taken from topic:", current_state)
         end_effector_position = self.compute_position(self.states[:7])
         return np.concatenate((current_state, end_effector_position))
     
@@ -206,8 +209,8 @@ class Jaco2Env(gym.Env):
 class ActorNetwork(nn.Module):
     def __init__(self,n_actions, state_dim,fc1_dims = 256, fc2_dims = 128, chkpt_dir = 'tmp/ppo'):
         super(ActorNetwork,self).__init__()
-        self.fc1 = nn.Linear(state_dim,fc1_dims),
-        self.fc2 = nn.Linear(fc1_dims,fc2_dims),
+        self.fc1 = nn.Linear(state_dim,fc1_dims)
+        self.fc2 = nn.Linear(fc1_dims,fc2_dims)
         self.mean = nn.Linear(fc2_dims,n_actions)
         self.log_std = nn.Parameter(torch.zeros(n_actions)) 
 
@@ -216,16 +219,16 @@ class ActorNetwork(nn.Module):
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
         mean = self.mean(x)
-        std = torch.log_std.exp().expand_as(mean)
+        std = torch.exp(self.log_std)  #.expand_as(mean)
         return mean, std
 
 
 
 class CriticNetwork(nn.Module):
-    def __init__(self, state_dim,alpha,fc1_dims = 256, fc2_dims = 128, chkpt_dir = 'tmp/ppo'):
+    def __init__(self, state_dim,fc1_dims = 256, fc2_dims = 128, chkpt_dir = 'tmp/ppo'):
         super(CriticNetwork,self).__init__()
-        self.fc1 = nn.Linear(state_dim,fc1_dims),
-        self.fc2 = nn.Linear(fc1_dims,fc2_dims),
+        self.fc1 = nn.Linear(state_dim,fc1_dims)
+        self.fc2 = nn.Linear(fc1_dims,fc2_dims)
         self.value  = nn.Linear(fc2_dims,1)
 
 
@@ -239,8 +242,8 @@ class CriticNetwork(nn.Module):
 
 
 class Agent:
-    def __init__ (self, state_dim, actor_dim, lr = 0.002, gamma = 0.99, eps_clip = 0.2,epsilon = 0.2,lmbda = 0.95, epoch = 10, batch_size = 64):
-        self.actor_network = ActorNetwork(state_dim,actor_dim)
+    def __init__ (self, state_dim, action_dim, lr = 0.002, gamma = 0.99, eps_clip = 0.2,epsilon = 0.2,lmbda = 0.95, epoch = 10, batch_size = 64):
+        self.actor_network = ActorNetwork(action_dim,state_dim)
         self.critic_network = CriticNetwork(state_dim)
         self.actor_optimizer = optim.Adam(self.actor_network.parameters(),lr = lr)
         self.critic_optimizer = optim.Adam(self.critic_network.parameters(),lr = lr)
@@ -258,10 +261,14 @@ class Agent:
 
     def select_action(self,state):
         state = torch.FloatTensor(state).unsqueeze(0)
+        print("state :", state)
         mean, std = self.actor_network(state)
-        dist = MultivariateNormal(mean,std)
+        print("mean : ", mean, " & state : ", std)
+        cov_matrix = torch.diag(std**2) 
+        print("covariance matrix :",cov_matrix)
+        dist = MultivariateNormal(mean,covariance_matrix=cov_matrix)
         action = dist.sample()
-        action_log_prob = dist.log_prob(action).sum(dim=1)
+        action_log_prob = dist.log_prob(action)   #.sum(dim=1)
         return action.detach().numpy()[0],action_log_prob.detach()
     
     def compute_advantages(self, rewards, values, next_values, dones):
@@ -275,7 +282,7 @@ class Agent:
 
     def learn(self, trajectories):
         states, actions, log_probs, rewards, next_states, dones = zip(*trajectories)
-
+        # print(states,actions,log_probs,rewards,next_states,dones)
         states = torch.FloatTensor(states)
         actions = torch.FloatTensor(actions)
         old_log_probs = torch.stack(log_probs)
@@ -344,28 +351,36 @@ if __name__ == '__main__':
     # #env = Dumm
     # # env.reset()
     n_episodes = 200
-    max_timesteps = 5000
+    max_timesteps = 10
 
     # agent.load_models()
     best_score = 0
     print("Training begins")
     for i in range(n_episodes):
+        print("Epsiode :", i)
         observation = env.reset()
         done = False
         score = 0
+
         trajectories = []
         print("Environment resetted")
         for t in range(max_timesteps):
+            print("Step :",t)
+            # print("observation :", observation)
             action,log_prob = agent.select_action(observation)
             next_observation, reward, done, info = env.step(action)
             score += reward
-            trajectories.append(observation, action,log_prob, reward, next_observation, done)
+            print("action :",action)
+            trajectories.append([observation, action,log_prob, reward, next_observation, done])
             observation = next_observation
 
             if done :
                 
                 break
+            print("score :", score)
+        print("Learning.....")
         agent.learn(trajectories)
+        print("Learning finished for ", i , "episode")
 
         if(i%10):
             agent.save_models()
