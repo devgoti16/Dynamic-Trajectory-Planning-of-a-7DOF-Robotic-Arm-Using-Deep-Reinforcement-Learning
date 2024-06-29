@@ -2,6 +2,7 @@
 
 import rospy
 import gym
+import threading
 from collections import deque
 import numpy as np
 import random
@@ -26,8 +27,8 @@ from  stable_baselines.common.vec_env import DummyVecEnv
 from tqdm import tqdm
 from torch.distributions import MultivariateNormal
 from collections import namedtuple,deque
-TIME_DELTA = 0.1
 
+torch.autograd.set_detect_anomaly(True)
 class Jaco2Env(gym.Env):
     def __init__(self):
 
@@ -67,11 +68,20 @@ class Jaco2Env(gym.Env):
         print("all service and topics called")
         self.d_parameters = [0.2755,0.2050,0.2050,0.2073,0.1038,0.1038,0.1600,0.0098] #d1,d2,d3,d4,d5,d6,d7,e2  
         self.states = None
+        self.states_lock = threading.Lock()
+        self.callback_thread = threading.Thread(target = self.run_callback)
+        self.callback_thread.daemon = True
+        self.callback_thread.start()
+
+    def run_callback(self):
+        rospy.spin()
 
     def joint_state_callback(self,msg):
         angles = msg.position[:7]
         velocities = msg.velocity[:7]
-        self.states = angles + velocities
+        # self.states = angles + velocities
+        with self.states_lock :
+            self.states = angles + velocities
         print("callback details:",self.states)
 
     def update_goal_position(self):
@@ -209,17 +219,17 @@ class Jaco2Env(gym.Env):
 class ActorNetwork(nn.Module):
     def __init__(self,n_actions, state_dim,fc1_dims = 256, fc2_dims = 128, chkpt_dir = 'tmp/ppo'):
         super(ActorNetwork,self).__init__()
-        self.fc1 = nn.Linear(state_dim,fc1_dims)
-        self.fc2 = nn.Linear(fc1_dims,fc2_dims)
-        self.mean = nn.Linear(fc2_dims,n_actions)
-        self.log_std = nn.Parameter(torch.zeros(n_actions)) 
+        self.fc1 = nn.Linear(state_dim, fc1_dims).to(torch.float32)
+        self.fc2 = nn.Linear(fc1_dims, fc2_dims).to(torch.float32)
+        self.mean = nn.Linear(fc2_dims, n_actions).to(torch.float32)
+        self.log_std = nn.Parameter(torch.zeros(n_actions, dtype=torch.float32))
 
 
     def forward(self,x):
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
         mean = self.mean(x)
-        std = torch.exp(self.log_std)  #.expand_as(mean)
+        std = self.log_std.exp() #.expand_as(mean)
         return mean, std
 
 
@@ -227,10 +237,9 @@ class ActorNetwork(nn.Module):
 class CriticNetwork(nn.Module):
     def __init__(self, state_dim,fc1_dims = 256, fc2_dims = 128, chkpt_dir = 'tmp/ppo'):
         super(CriticNetwork,self).__init__()
-        self.fc1 = nn.Linear(state_dim,fc1_dims)
-        self.fc2 = nn.Linear(fc1_dims,fc2_dims)
-        self.value  = nn.Linear(fc2_dims,1)
-
+        self.fc1 = nn.Linear(state_dim, fc1_dims).to(torch.float32)
+        self.fc2 = nn.Linear(fc1_dims, fc2_dims).to(torch.float32)
+        self.value = nn.Linear(fc2_dims, 1).to(torch.float32)
 
     def forward(self,x):
         x = torch.relu(self.fc1(x))
@@ -260,9 +269,10 @@ class Agent:
     #         state_arr
 
     def select_action(self,state):
-        state = torch.FloatTensor(state).unsqueeze(0)
+        state = torch.tensor(state,dtype=torch.float32).unsqueeze(0)
         print("state :", state)
-        mean, std = self.actor_network(state)
+        with torch.no_grad():
+            mean, std = self.actor_network(state)
         print("mean : ", mean, " & state : ", std)
         cov_matrix = torch.diag(std**2) 
         print("covariance matrix :",cov_matrix)
@@ -275,25 +285,28 @@ class Agent:
         advantages = []
         gae = 0
         for step in reversed(range(len(rewards))):
-            delta = rewards[step] + self.gamma * next_values[step] * (1 - dones[step]) - values[step]
-            gae = delta + self.gamma * self.lmbda * (1 - dones[step]) * gae
+            delta = rewards[step] + self.gamma * next_values[step] * (~dones[step]) - values[step]
+            gae = delta + self.gamma * self.lmbda * (~dones[step]) * gae
             advantages.insert(0, gae)
         return advantages
 
     def learn(self, trajectories):
         states, actions, log_probs, rewards, next_states, dones = zip(*trajectories)
         # print(states,actions,log_probs,rewards,next_states,dones)
-        states = torch.FloatTensor(states)
-        actions = torch.FloatTensor(actions)
+        # print(states.dtype())
+        states = torch.tensor(states, dtype=torch.float32)
+        actions = torch.tensor(actions, dtype=torch.float32)
         old_log_probs = torch.stack(log_probs)
-        rewards = torch.FloatTensor(rewards)
-        next_states = torch.FloatTensor(next_states)
-        dones = torch.FloatTensor(dones)
+        rewards = torch.tensor(rewards, dtype=torch.float32)
+        next_states = torch.tensor(next_states, dtype=torch.float32)
+        dones = torch.tensor(dones, dtype=torch.bool)
 
-        values = self.critic_network(states).squeeze()
-        next_values = self.critic_network(next_states).squeeze()
-        advantages = self.compute_advantages(rewards, values.detach().numpy(), next_values.detach().numpy(), dones)
-        advantages = torch.FloatTensor(advantages)
+        with torch.no_grad():
+            values = self.critic_network(states).squeeze()
+            next_values = self.critic_network(next_states).squeeze()
+        
+        advantages = self.compute_advantages(rewards.detach().numpy(), values.detach().numpy(), next_values.detach().numpy(), dones)
+        advantages = torch.tensor(advantages,dtype=torch.float32)
         returns = advantages + values
 
         for _ in range(self.epochs):
@@ -306,22 +319,36 @@ class Agent:
                 batch_advantages = advantages[batch_indices]
 
                 mean, std = self.actor_network(batch_states)
+                print("mean : ",mean)
                 dist = Normal(mean, std)
                 new_log_probs = dist.log_prob(batch_actions).sum(dim=-1)
-
                 ratios = torch.exp(new_log_probs - batch_log_probs)
+                
                 surr1 = ratios * batch_advantages
                 surr2 = torch.clamp(ratios, 1.0 - self.epsilon, 1.0 + self.epsilon) * batch_advantages
                 policy_loss = -torch.min(surr1, surr2).mean()
+                print("policy loss :",policy_loss)
+                value_pred = self.critic_network(batch_states).squeeze()
+                value_loss = F.mse_loss(value_pred , batch_returns)
+                print("value loss :",value_loss)
+                # self.actor_optimizer.zero_grad()
+                # policy_loss.backward(retain_graph=True)
+                # self.actor_optimizer.step()
 
-                value_loss = (self.critic_network(batch_states).squeeze() - batch_returns).pow(2).mean()
+                # self.critic_optimizer.zero_grad()
+                # value_loss.backward(retain_graph=True)
+                # self.critic_optimizer.step()
 
+                total_loss = policy_loss + 0.5 * value_loss
                 self.actor_optimizer.zero_grad()
-                policy_loss.backward()
-                self.actor_optimizer.step()
-
                 self.critic_optimizer.zero_grad()
-                value_loss.backward()
+                total_loss.backward()
+                # torch.nn.utils.clip_grad_norm_(self.actor_network.parameters(), 0.5)
+                # torch.nn.utils.clip_grad_norm_(self.critic_network.parameters(), 0.5)
+                torch.nn.utils.clip_grad_norm_(self.actor_network.parameters(), max_norm=0.5)
+                torch.nn.utils.clip_grad_norm_(self.critic_network.parameters(), max_norm=0.5)
+
+                self.actor_optimizer.step()
                 self.critic_optimizer.step()
 
 
@@ -363,7 +390,7 @@ if __name__ == '__main__':
         score = 0
 
         trajectories = []
-        print("Environment resetted")
+        print("............Environment resetted..............")
         for t in range(max_timesteps):
             print("Step :",t)
             # print("observation :", observation)
@@ -379,10 +406,11 @@ if __name__ == '__main__':
                 break
             print("score :", score)
         print("Learning.....")
+        # trajectories = torch.FloatTensor(np.array(trajectories))
         agent.learn(trajectories)
         print("Learning finished for ", i , "episode")
 
-        if(i%10):
-            agent.save_models()
-        print(f"Episode : {i}, score : {score}")
+        # if(i%10):
+        #     agent.save_models()
+        # print(f"Episode : {i}, score : {score}")
     
