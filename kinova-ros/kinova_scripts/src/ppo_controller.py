@@ -20,6 +20,7 @@ from torch.distributions.normal import Normal
 from numpy import inf
 import subprocess
 from os import path
+import os
 #import math
 from stable_baselines import PPO2
 from stable_baselines.common.policies import MlpPolicy
@@ -29,6 +30,21 @@ from torch.distributions import MultivariateNormal
 from collections import namedtuple,deque
 
 torch.autograd.set_detect_anomaly(True)
+
+class ReplayBuffer:
+    def __init__(self, capacity):
+        self.buffer = deque(maxlen=capacity)
+    
+    def push(self, state, action, reward, next_state, done):
+        self.buffer.append((state, action, reward, next_state, done))
+    
+    def sample(self, batch_size):
+        return random.sample(self.buffer, batch_size)
+    
+    def __len__(self):
+        return len(self.buffer)
+    
+
 class Jaco2Env(gym.Env):
     def __init__(self):
 
@@ -82,7 +98,7 @@ class Jaco2Env(gym.Env):
         # self.states = angles + velocities
         with self.states_lock :
             self.states = angles + velocities
-        print("callback details:",self.states)
+        #print("callback details:",self.states)
 
     def update_goal_position(self):
         self.goal_position += np.random.uniform(low=-0.05, high=0.05, size=3)  # Random continuous motion
@@ -173,7 +189,7 @@ class Jaco2Env(gym.Env):
         except (rospy.ServiceException) as e:
             print("/gazebo/pause_physics service call failed")
         #self.update_goal_position() 
-        print("current state taken from topic:", self.states) # Update the goal position continuously
+        #print("current state taken from topic:", self.states) # Update the goal position continuously
         end_effector_position = self.compute_position(self.states[:7])
         next_state = np.concatenate((self.states, end_effector_position))
         distance_to_goal = np.linalg.norm(end_effector_position - self.goal_position)     
@@ -181,9 +197,9 @@ class Jaco2Env(gym.Env):
         done = distance_to_goal < 0.05  # Close enough to goal
         if done:
             reward += 50  # Large reward for reaching the goal
-        print("reward : ",reward)
-        print("next state: ",next_state)
-        print("distance to goal:",distance_to_goal)
+        # print("reward : ",reward)
+        # print("next state: ",next_state)
+        # print("distance to goal:",distance_to_goal)
         return next_state, reward, done, {}
 
     def reset(self):
@@ -210,7 +226,7 @@ class Jaco2Env(gym.Env):
         except (rospy.ServiceException) as e:
             print("/gazebo/pause_physics service call failed")
         current_state = self.states
-        print("current state taken from topic:", current_state)
+        #print("current state taken from topic:", current_state)
         end_effector_position = self.compute_position(self.states[:7])
         return np.concatenate((current_state, end_effector_position))
     
@@ -263,19 +279,30 @@ class Agent:
         self.batch_size = batch_size
         self.eps_clip = eps_clip
         self.MseLoss = nn.MSELoss()
+        self.replay_buffer = ReplayBuffer(10000)
 
     # def learn(self):
     #     for _ in range(self.n_epochs):
     #         state_arr
+    def save_models(self, path='models'):
+        if not os.path.exists(path):
+            os.makedirs(path)
+        torch.save(self.actor_network.state_dict(), os.path.join(path, 'actor.pth'))
+        torch.save(self.critic_network.state_dict(), os.path.join(path, 'critic.pth'))
+
+    def load_models(self, path='models'):
+        self.actor_network.load_state_dict(torch.load(os.path.join(path, 'actor.pth')))
+        self.critic_network.load_state_dict(torch.load(os.path.join(path, 'critic.pth')))
+
 
     def select_action(self,state):
-        state = torch.tensor(state,dtype=torch.float32).unsqueeze(0)
-        print("state :", state)
+        #print("state :", state)
         with torch.no_grad():
+            state = torch.tensor(state,dtype=torch.float32).unsqueeze(0)
             mean, std = self.actor_network(state)
-        print("mean : ", mean, " & state : ", std)
+        #print("mean : ", mean, " & state : ", std)
         cov_matrix = torch.diag(std**2) 
-        print("covariance matrix :",cov_matrix)
+        #print("covariance matrix :",cov_matrix)
         dist = MultivariateNormal(mean,covariance_matrix=cov_matrix)
         action = dist.sample()
         action_log_prob = dist.log_prob(action)   #.sum(dim=1)
@@ -291,9 +318,15 @@ class Agent:
         return advantages
 
     def learn(self, trajectories):
+
+        if not trajectories:
+            print("Warning: Empty trajectories. Skipping learning step.")
+            return
+        
         states, actions, log_probs, rewards, next_states, dones = zip(*trajectories)
         # print(states,actions,log_probs,rewards,next_states,dones)
         # print(states.dtype())
+        print(f"Learning step - Trajectories: {len(trajectories)}, States shape: {np.shape(states)}")
         states = torch.tensor(states, dtype=torch.float32)
         actions = torch.tensor(actions, dtype=torch.float32)
         old_log_probs = torch.stack(log_probs)
@@ -319,7 +352,7 @@ class Agent:
                 batch_advantages = advantages[batch_indices]
 
                 mean, std = self.actor_network(batch_states)
-                print("mean : ",mean)
+                #print("mean : ",mean)
                 dist = Normal(mean, std)
                 new_log_probs = dist.log_prob(batch_actions).sum(dim=-1)
                 ratios = torch.exp(new_log_probs - batch_log_probs)
@@ -327,10 +360,10 @@ class Agent:
                 surr1 = ratios * batch_advantages
                 surr2 = torch.clamp(ratios, 1.0 - self.epsilon, 1.0 + self.epsilon) * batch_advantages
                 policy_loss = -torch.min(surr1, surr2).mean()
-                print("policy loss :",policy_loss)
+                #print("policy loss :",policy_loss)
                 value_pred = self.critic_network(batch_states).squeeze()
                 value_loss = F.mse_loss(value_pred , batch_returns)
-                print("value loss :",value_loss)
+                #print("value loss :",value_loss)
                 # self.actor_optimizer.zero_grad()
                 # policy_loss.backward(retain_graph=True)
                 # self.actor_optimizer.step()
@@ -351,7 +384,18 @@ class Agent:
                 self.actor_optimizer.step()
                 self.critic_optimizer.step()
 
-
+def evaluate(agent, env, num_episodes=10):
+    total_rewards = []
+    for _ in range(num_episodes):
+        observation = env.reset()
+        episode_reward = 0
+        done = False
+        while not done:
+            action, _ = agent.select_action(observation)
+            observation, reward, done, _ = env.step(action)
+            episode_reward += reward
+        total_rewards.append(episode_reward)
+    return np.mean(total_rewards), np.std(total_rewards)
 
 
 
@@ -371,14 +415,16 @@ if __name__ == '__main__':
     time.sleep(15)
     actor_lr = 0.001
     critic_lr = 0.001
-    batch_size = 64
+    batch_size = 32
     TIME_DELTA = 0.1
 
 
     # #env = Dumm
     # # env.reset()
     n_episodes = 200
-    max_timesteps = 10
+    max_timesteps = 20
+    eval_interval = 10
+    episode_rewards = []
 
     # agent.load_models()
     best_score = 0
@@ -392,23 +438,50 @@ if __name__ == '__main__':
         trajectories = []
         print("............Environment resetted..............")
         for t in range(max_timesteps):
-            print("Step :",t)
+            print(f"  Step: {t}")
             # print("observation :", observation)
             action,log_prob = agent.select_action(observation)
+            print(f"  Action selected: {action}")
             next_observation, reward, done, info = env.step(action)
+            print(f"  Reward: {reward}")
             score += reward
-            print("action :",action)
+            # print("action :",action)
             trajectories.append([observation, action,log_prob, reward, next_observation, done])
             observation = next_observation
 
             if done :
-                
+                print("Episodic task completed early")
                 break
-            print("score :", score)
+        print(f"Total for {i} episode is {score}")
+
+        episode_rewards.append(score)
         print("Learning.....")
         # trajectories = torch.FloatTensor(np.array(trajectories))
         agent.learn(trajectories)
         print("Learning finished for ", i , "episode")
+
+        # print(f"Episode {i} finished. Reward: {episode_reward}")
+
+        if (i + 1) % eval_interval == 0:
+            mean_reward, std_reward = evaluate(agent, env)
+            print(f"Evaluation after {i+1} episodes: Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}")
+    print(episode_rewards)
+    # Save the model after training
+    agent.save_models()
+
+    # Plot episode rewards
+    plt.figure(figsize=(10, 5))
+    plt.plot(episode_rewards)
+    plt.title('Episode Rewards')
+    plt.xlabel('Episode')
+    plt.ylabel('Reward')
+    plt.savefig('episode_rewards.png')
+    plt.show()
+
+    # Final evaluation
+    mean_reward, std_reward = evaluate(agent, env, num_episodes=50)
+    print(f"Final evaluation: Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}")
+
 
         # if(i%10):
         #     agent.save_models()
