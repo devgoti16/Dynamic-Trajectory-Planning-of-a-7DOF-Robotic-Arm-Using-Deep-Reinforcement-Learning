@@ -26,7 +26,7 @@ from stable_baselines import PPO2
 from stable_baselines.common.policies import MlpPolicy
 from  stable_baselines.common.vec_env import DummyVecEnv
 from tqdm import tqdm
-from torch.distributions import MultivariateNormal
+from torch.distributions import MultivariateNormal, Normal
 from collections import namedtuple,deque
 
 torch.autograd.set_detect_anomaly(True)
@@ -305,6 +305,7 @@ class Agent:
         #print("covariance matrix :",cov_matrix)
         dist = MultivariateNormal(mean,covariance_matrix=cov_matrix)
         action = dist.sample()
+        # action = torch.tanh(action)
         action_log_prob = dist.log_prob(action)   #.sum(dim=1)
         return action.detach().numpy()[0],action_log_prob.detach()
     
@@ -337,10 +338,9 @@ class Agent:
         with torch.no_grad():
             values = self.critic_network(states).squeeze()
             next_values = self.critic_network(next_states).squeeze()
-        
-        advantages = self.compute_advantages(rewards.detach().numpy(), values.detach().numpy(), next_values.detach().numpy(), dones)
-        advantages = torch.tensor(advantages,dtype=torch.float32)
-        returns = advantages + values
+            advantages = self.compute_advantages(rewards.detach().numpy(), values.detach().numpy(), next_values.detach().numpy(), dones)
+            advantages = torch.tensor(advantages,dtype=torch.float32)
+            returns = advantages + values
 
         for _ in range(self.epochs):
             for i in range(0, len(states), self.batch_size):
@@ -412,17 +412,17 @@ if __name__ == '__main__':
     print("observation space dimension :",env.observation_space.shape[0])
     print("action space dimension :",env.action_space.shape[0])
     agent = Agent(state_dim=env.observation_space.shape[0], action_dim=env.action_space.shape[0])
-    time.sleep(15)
+    time.sleep(10)
     actor_lr = 0.001
     critic_lr = 0.001
     batch_size = 32
-    TIME_DELTA = 0.1
+    TIME_DELTA = 0
 
 
     # #env = Dumm
     # # env.reset()
     n_episodes = 200
-    max_timesteps = 20
+    max_timesteps = 200
     eval_interval = 10
     episode_rewards = []
 
