@@ -1,5 +1,4 @@
 #!/home/dev/anaconda3/envs/myrosenv/bin/python
-
 import rospy
 import gym
 import threading
@@ -21,7 +20,6 @@ from numpy import inf
 import subprocess
 from os import path
 import os
-#import math
 from stable_baselines import PPO2
 from stable_baselines.common.policies import MlpPolicy
 from  stable_baselines.common.vec_env import DummyVecEnv
@@ -29,24 +27,9 @@ from tqdm import tqdm
 from torch.distributions import MultivariateNormal, Normal
 from collections import namedtuple,deque
 import matplotlib
-#matplotlib.use('Agg')  # Use a non-interactive backend
 torch.autograd.set_detect_anomaly(True)
 from torch.utils.tensorboard import SummaryWriter
-import datetime
-
-# class ReplayBuffer:
-#     def __init__(self, capacity):
-#         self.buffer = deque(maxlen=capacity)
-    
-#     def push(self, state, action, reward, next_state, done):
-#         self.buffer.append((state, action, reward, next_state, done))
-    
-#     def sample(self, batch_size):
-#         return random.sample(self.buffer, batch_size)
-    
-#     def __len__(self):
-#         return len(self.buffer)
-    
+import datetime 
 
 class Jaco2Env(gym.Env):
     def __init__(self):
@@ -114,17 +97,48 @@ class Jaco2Env(gym.Env):
         # self.goal_pub.publish(goal_msg)
         # self.state[14:] = self.goal_position
 
-    def calculate_reward(self, distance):
-        #distance_reward = -distance
-        exp_distance_penalty = -np.exp(distance)
-        reward =  exp_distance_penalty
+    def calculate_reward(self,distance, current_position, action, previous_action=None,previous_distance=None):
+        # Distance to goal
+        distance_reward = -distance
+
+        # Progress towards goal
+        
+        progress = previous_distance - distance
+        if progress > 0:
+            progress_reward = 3 * progress  # Reward for moving towards the goal
+        else:
+            progress_reward = -10
+
+        # Action smoothness
+        if previous_action is not None:
+            action_smoothness = -0.1*np.sum(np.square(action - previous_action))
+        else:
+            action_smoothness = 0
+
+        # Encourage exploration in early stages
+        exploration_reward = 0
+
+        # Penalize being close to joint limits
+        # joint_limit_penalty = self.calculate_joint_limit_penalty()
+
+        # Energy efficiency
+        energy_penalty = -0.01 * np.sum(np.square(action))
+
+        # Combine rewards
+        reward = (
+            3 * distance_reward +
+            5 * progress_reward +
+             action_smoothness +
+            exploration_reward  +
+            3 * energy_penalty
+        )
+
+        # Bonus for reaching the goal
+        if distance < 0.5:
+            reward += 100
         return reward
     
     def forward_kinematics(self, joint_angles):
-        # Placeholder for forward kinematics calculation
-        # This function should return the current end-effector position
-        # based on the provided joint angles.
-
         dh_parameters = [
             (np.radians(90), 0, -self.d_parameters[0], joint_angles[0]),
             (np.radians(90), 0, 0,  joint_angles[1]),
@@ -133,14 +147,11 @@ class Jaco2Env(gym.Env):
             (np.radians(90), 0, -(self.d_parameters[3]+self.d_parameters[4]), joint_angles[4]),
             (np.radians(90), 0, 0,  joint_angles[5]),
             (np.radians(180), 0, -(self.d_parameters[5]+self.d_parameters[6]),  joint_angles[6])
-        ] #alpha,d,a,thetea
+        ] 
         T_0_n = np.eye(4)
-        # print(dh_parameters)
-        #transformation = []
         for (alpha,d, a, theta) in dh_parameters:
             T_i = self.dh_transformation(alpha, d, a, theta)
             T_0_n = np.dot(T_0_n, T_i)
-            # transformation.append(T_0_n)
         return T_0_n
     
     def dh_transformation(self,alpha, d, a, theta):
@@ -170,7 +181,9 @@ class Jaco2Env(gym.Env):
         joint_vel_msg_6 = Float64()
         joint_vel_msg_7 = Float64()
         joint_vel_msg_1.data = action[0]
-        joint_vel_msg_2.data = action[1] 
+        joint_vel_msg_2.data = action[1]        
+
+        
         joint_vel_msg_3.data = action[2] 
         joint_vel_msg_4.data = action[3] 
         joint_vel_msg_5.data = action[4] 
@@ -201,13 +214,14 @@ class Jaco2Env(gym.Env):
         end_effector_position = self.compute_position(current_state[:7])
         next_state = np.concatenate((current_state, end_effector_position))
         distance_to_goal = np.linalg.norm(end_effector_position - self.goal_position)     
-        reward = self.calculate_reward(distance_to_goal)
+        reward = self.calculate_reward(distance_to_goal,current_state,action,self.last_action,self.last_distance)
         done = distance_to_goal < 0.05  # Close enough to goal
-        if done:
-            reward += 50  # Large reward for reaching the goal
+         # Large reward for reaching the goal
         # print("reward : ",reward)
         # print("next state: ",next_state)
         # print("distance to goal:",distance_to_goal)
+        last_action = action
+        last_distance = distance_to_goal
         return next_state, reward, done, {}
 
     def reset(self):
@@ -234,6 +248,8 @@ class Jaco2Env(gym.Env):
         except (rospy.ServiceException) as e:
             print("/gazebo/pause_physics service call failed")
         current_state = self.get_current_state()
+        self.last_action = 0
+        self.last_distance = 0
         #print("current state taken from topic:", current_state)
         end_effector_position = self.compute_position(current_state[:7])
         return np.concatenate((current_state, end_effector_position))
@@ -275,7 +291,7 @@ class CriticNetwork(nn.Module):
 
 
 class Agent:
-    def __init__ (self, state_dim, action_dim, lr = 0.002, gamma = 0.99, eps_clip = 0.2,epsilon = 0.2,lmbda = 0.95, epoch = 10, batch_size = 64):
+    def __init__ (self, state_dim, action_dim, lr = 3e-4, gamma = 0.99, eps_clip = 0.2,epsilon = 0.2,lmbda = 0.95, epoch = 30, batch_size = 32):
         self.actor_network = ActorNetwork(action_dim,state_dim)
         self.critic_network = CriticNetwork(state_dim)
         self.actor_optimizer = optim.Adam(self.actor_network.parameters(),lr = lr)
@@ -290,6 +306,9 @@ class Agent:
         #self.replay_buffer = ReplayBuffer(10000)
         self.actor_loss = 0
         self.critic_loss = 0
+        self.actor_scheduler = optim.lr_scheduler.StepLR(self.actor_optimizer, step_size=100, gamma=0.9)
+        self.critic_scheduler = optim.lr_scheduler.StepLR(self.critic_optimizer, step_size=100, gamma=0.9)
+
 
     # def learn(self):
     #     for _ in range(self.n_epochs):
@@ -316,7 +335,7 @@ class Agent:
         #print("covariance matrix :",cov_matrix)
         dist = MultivariateNormal(mean,covariance_matrix=cov_matrix)
         action = dist.sample()
-        # action = torch.tanh(action)
+        action = 2*(torch.tanh(action))
         action_log_prob = dist.log_prob(action)   #.sum(dim=1)
         return action.detach().numpy()[0],action_log_prob.detach()
     
@@ -338,7 +357,7 @@ class Agent:
         states, actions, log_probs, rewards, next_states, dones = zip(*trajectories)
         # print(states,actions,log_probs,rewards,next_states,dones)
         # print(states.dtype())
-        print(f"Learning step - Trajectories: {len(trajectories)}, States shape: {np.shape(states)}")
+        #print(f"Learning step - Trajectories: {len(trajectories)}, States shape: {np.shape(states)}")
         states = torch.tensor(states, dtype=torch.float32)
         actions = torch.tensor(actions, dtype=torch.float32)
         old_log_probs = torch.stack(log_probs)
@@ -351,7 +370,10 @@ class Agent:
             values = self.critic_network(states).squeeze()
             next_values = self.critic_network(next_states).squeeze()
             advantages = self.compute_advantages(rewards.detach().numpy(), values.detach().numpy(), next_values.detach().numpy(), dones)
+            
             advantages = torch.tensor(advantages,dtype=torch.float32)
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
             returns = advantages + values
 
         for _ in range(self.epochs):
@@ -398,7 +420,7 @@ class Agent:
         self.actor_loss = policy_loss.item()
         self.critic_loss = value_loss.item()
 
-def evaluate(agent, env, num_episodes=10):
+def evaluate(agent, env, num_episodes=5):
     total_rewards = []
     episode_lengths = []
     for _ in range(num_episodes):
@@ -450,9 +472,9 @@ if __name__ == '__main__':
 
     # #env = Dumm
     # # env.reset()
-    n_episodes = 12
-    max_timesteps = 15
-    eval_interval = 10
+    n_episodes = 500
+    max_timesteps = 500
+    eval_interval = 100
     episode_rewards = []
     evaluate_interval = 100  # Set to None to disable intermediate evaluation
     save_best_model = True   # Set to False if you only want to save the final model
@@ -475,12 +497,12 @@ if __name__ == '__main__':
             trajectories = []
             print("............Environment resetted..............")
             for t in range(max_timesteps):
-                print(f"  Step: {t}")
+                #print(f"  Step: {t}")
                 # print("observation :", observation)
                 action,log_prob = agent.select_action(observation)
-                print(f"  Action selected: {action}")
+                #print(f"  Action selected: {action}")
                 next_observation, reward, done, info = env.step(action)
-                print(f"  Reward: {reward}")
+                #print(f"  Reward: {reward}")
                 score += reward
                 # print("action :",action)
                 trajectories.append([observation, action,log_prob, reward, next_observation, done])
@@ -496,10 +518,10 @@ if __name__ == '__main__':
             writer.add_scalar('Training/Episode Length', t+1, i)
 
 
-            print("Learning.....")
+            #print("Learning.....")
             # trajectories = torch.FloatTensor(np.array(trajectories))
             agent.learn(trajectories)
-            print("Learning finished for ", i , "episode")
+            #print("Learning finished for ", i , "episode")
 
             writer.add_scalar('Training/Actor Loss', agent.actor_loss, i)
             writer.add_scalar('Training/Critic Loss', agent.critic_loss, i)
@@ -535,7 +557,7 @@ if __name__ == '__main__':
     
         # Final evaluation
         print("loading model")
-        agent.load_models('final_model')
+        agent.load_models()
         print("model loaded")
         final_mean_reward, final_std_reward, final_mean_length = evaluate(agent, env, num_episodes=50)
         print(f"Final evaluation: Mean reward: {final_mean_reward:.2f} ± {final_std_reward:.2f}, Mean length: {final_mean_length:.2f}")
