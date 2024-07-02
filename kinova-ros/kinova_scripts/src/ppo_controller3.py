@@ -26,24 +26,35 @@ from stable_baselines import PPO2
 from stable_baselines.common.policies import MlpPolicy
 from  stable_baselines.common.vec_env import DummyVecEnv
 from tqdm import tqdm
-from torch.distributions import MultivariateNormal
+from torch.distributions import MultivariateNormal, Normal
 from collections import namedtuple,deque
+import gc
 
 torch.autograd.set_detect_anomaly(True)
-
-class ReplayBuffer:
+    
+class EfficientReplayBuffer:
     def __init__(self, capacity):
-        self.buffer = deque(maxlen=capacity)
-    
-    def push(self, state, action,log_probs, reward, next_state, done):
-        self.buffer.append((state, action, log_probs, reward, next_state, done))
-    
+        self.capacity = capacity
+        self.buffer = []
+        self.position = 0
+
+    def push(self, state, action, reward, next_state, done, log_prob):
+        if len(self.buffer) < self.capacity:
+            self.buffer.append(None)
+        self.buffer[self.position] = (state, action, reward, next_state, done, log_prob)
+        self.position = (self.position + 1) % self.capacity
+
     def sample(self, batch_size):
-        return random.sample(self.buffer, batch_size)
-    
+        batch = random.sample(self.buffer, batch_size)
+        state, action, reward, next_state, done, log_prob = map(np.stack, zip(*batch))
+        return state, action, reward, next_state, done, log_prob
+
     def __len__(self):
         return len(self.buffer)
-    
+
+    def clear(self):
+        self.buffer.clear()
+        self.position = 0
 
 class Jaco2Env(gym.Env):
     def __init__(self):
@@ -83,7 +94,7 @@ class Jaco2Env(gym.Env):
         # rospy.spin()
         print("all service and topics called")
         self.d_parameters = [0.2755,0.2050,0.2050,0.2073,0.1038,0.1038,0.1600,0.0098] #d1,d2,d3,d4,d5,d6,d7,e2  
-        self.states = None
+        self.states = []
         self.states_lock = threading.Lock()
         self.callback_thread = threading.Thread(target = self.run_callback)
         self.callback_thread.daemon = True
@@ -279,7 +290,7 @@ class Agent:
         self.batch_size = batch_size
         self.eps_clip = eps_clip
         self.MseLoss = nn.MSELoss()
-        self.buffer = ReplayBuffer(10000)
+        self.replay_buffer = EfficientReplayBuffer(10000)
 
     # def learn(self):
     #     for _ in range(self.n_epochs):
@@ -294,18 +305,21 @@ class Agent:
         self.actor_network.load_state_dict(torch.load(os.path.join(path, 'actor.pth')))
         self.critic_network.load_state_dict(torch.load(os.path.join(path, 'critic.pth')))
 
+    def store_transition(self, state, action, reward, next_state, done, log_prob):
+        self.replay_buffer.push(state, action, reward, next_state, done, log_prob)
 
     def select_action(self,state):
         #print("state :", state)
         with torch.no_grad():
             state = torch.tensor(state,dtype=torch.float32).unsqueeze(0)
             mean, std = self.actor_network(state)
-        #print("mean : ", mean, " & state : ", std)
-        cov_matrix = torch.diag(std**2) 
-        #print("covariance matrix :",cov_matrix)
-        dist = MultivariateNormal(mean,covariance_matrix=cov_matrix)
-        action = dist.sample()
-        action_log_prob = dist.log_prob(action)   #.sum(dim=1)
+            #print("mean : ", mean, " & state : ", std)
+            cov_matrix = torch.diag(std**2) 
+            #print("covariance matrix :",cov_matrix)
+            dist = MultivariateNormal(mean,covariance_matrix=cov_matrix)
+            action = dist.sample()
+            # action = torch.tanh(action)
+            action_log_prob = dist.log_prob(action)   #.sum(dim=1)
         return action.detach().numpy()[0],action_log_prob.detach()
     
     def compute_advantages(self, rewards, values, next_values, dones):
@@ -316,63 +330,61 @@ class Agent:
             gae = delta + self.gamma * self.lmbda * (~dones[step]) * gae
             advantages.insert(0, gae)
         return advantages
+    
+    def compute_gae(self, rewards, values, next_values, dones):
+        gae = 0
+        returns = []
+        for step in reversed(range(len(rewards))):
+            delta = rewards[step] + self.gamma * next_values[step] * (1 - dones[step]) - values[step]
+            gae = delta + self.gamma * self.lmbda * (1 - dones[step]) * gae
+            returns.insert(0, gae + values[step])
+        return returns
 
     def learn(self):
         if len(self.replay_buffer) < self.batch_size:
             return
 
         for _ in range(self.epochs):
-            batch = self.replay_buffer.sample(self.batch_size)
-            states, actions, old_log_probs,rewards, next_states, dones = zip(*batch)
-
+            states, actions, rewards, next_states, dones, old_log_probs = self.replay_buffer.sample(self.batch_size)
+            
             states = torch.tensor(states, dtype=torch.float32)
-            old_log_probs = torch.tensor(old_log_probs,dtype=torch.float32)
             actions = torch.tensor(actions, dtype=torch.float32)
-            rewards = torch.tensor(rewards, dtype=torch.float32).unsqueeze(1)
-            next_states = torch.tensor(next_states, dtype=torch.float32)
-            dones = torch.tensor(dones, dtype=torch.float32).unsqueeze(1)
-
-            # Compute advantages
+            old_log_probs = torch.tensor(old_log_probs, dtype=torch.float32)
+            
             with torch.no_grad():
-                values = self.critic_network(states)
-                next_values = self.critic_network(next_states)
-                delta = rewards + self.gamma * next_values * (1 - dones) - values
-                advantages = self.compute_gae(delta, dones)
+                values = self.critic_network(states).squeeze()
+                next_values = self.critic_network(torch.tensor(next_states, dtype=torch.float32)).squeeze()
+                returns = torch.tensor(self.compute_gae(rewards, values.numpy(), next_values.numpy(), dones), dtype=torch.float32)
+                advantages = returns - values
 
             # Normalize advantages
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-            # Compute actor loss
+            # PPO update
             mean, std = self.actor_network(states)
-            dist = torch.distributions.Normal(mean, std)
-            new_log_probs = dist.log_prob(actions).sum(dim=-1, keepdim=True)
-            ratio = torch.exp(new_log_probs - old_log_probs)
+            dist = MultivariateNormal(mean, torch.diag_embed(std.pow(2)))
+            new_log_probs = dist.log_prob(actions)
+            
+            ratio = (new_log_probs - old_log_probs).exp()
             surr1 = ratio * advantages
-            surr2 = torch.clamp(ratio, 1.0 - self.epsilon, 1.0 + self.epsilon) * advantages
+            surr2 = torch.clamp(ratio, 1.0 - self.eps_clip, 1.0 + self.eps_clip) * advantages
             actor_loss = -torch.min(surr1, surr2).mean()
+            
+            value_pred = self.critic_network(states).squeeze()
+            value_loss = nn.MSELoss()(value_pred, returns)
+            
+            loss = actor_loss + 0.5 * value_loss
 
-            # Compute critic loss
-            critic_loss = nn.MSELoss()(self.critic_network(states), rewards + self.gamma * next_values * (1 - dones))
-
-            # Update actor
             self.actor_optimizer.zero_grad()
-            actor_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.actor_network.parameters(), max_norm=0.5)
-            self.actor_optimizer.step()
-
-            # Update critic
             self.critic_optimizer.zero_grad()
-            critic_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.critic_network.parameters(), max_norm=0.5)
+            loss.backward()
+            nn.utils.clip_grad_norm_(self.actor_network.parameters(), max_norm=0.5)
+            nn.utils.clip_grad_norm_(self.critic_network.parameters(), max_norm=0.5)
+            self.actor_optimizer.step()
             self.critic_optimizer.step()
 
-    def compute_gae(self, delta, dones):
-        advantages = []
-        gae = 0
-        for δ, done in zip(reversed(delta), reversed(dones)):
-            gae = δ + self.gamma * self.lmbda * gae * (1 - done)
-            advantages.insert(0, gae)
-        return torch.tensor(advantages, dtype=torch.float32)
+        # Clear buffer after update
+        self.replay_buffer.clear()
 
 def evaluate(agent, env, num_episodes=10):
     total_rewards = []
@@ -412,52 +424,57 @@ if __name__ == '__main__':
     # #env = Dumm
     # # env.reset()
     n_episodes = 200
-    max_timesteps = 200
+    max_timesteps = 100
     eval_interval = 10
     episode_rewards = []
 
     # agent.load_models()
     best_score = 0
     print("Training begins")
-    for i in range(n_episodes):
-        print("Epsiode :", i)
-        observation = env.reset()
-        done = False
-        score = 0
+    try: 
+        for i in range(n_episodes):
+            print("Epsiode :", i)
+            observation = env.reset()
+            done = False
+            score = 0
 
-        trajectories = []
-        print("............Environment resetted..............")
-        for t in range(max_timesteps):
-            print(f"  Step: {t}")
-            # print("observation :", observation)
-            action,log_prob = agent.select_action(observation)
-            print(f"  Action selected: {action}")
-            next_observation, reward, done, info = env.step(action)
-            print(f"  Reward: {reward}")
-            score += reward
-            # print("action :",action)
-            agent.replay_buffer.push(observation, action,log_prob, reward, next_observation, done)
-            observation = next_observation
+            trajectories = []
+            print("............Environment resetted..............")
+            for t in range(max_timesteps):
+                print(f"  Step: {t}")
+                # print("observation :", observation)
+                action,log_prob = agent.select_action(observation)
+                print(f"  Action selected: {action}")
+                next_observation, reward, done, info = env.step(action)
+                print(f"  Reward: {reward}")
+                score += reward
+                # print("action :",action)
+                agent.store_transition(observation, action, reward, next_observation, done, log_prob)
+                observation = next_observation
 
-            if done :
-                print("Episodic task completed early")
-                break
-        print(f"Total for {i} episode is {score}")
+                if done :
+                    print("Episodic task completed early")
+                    break
+            print(f"Total for {i} episode is {score}")
 
-        episode_rewards.append(score)
-        print("Learning.....")
-        # trajectories = torch.FloatTensor(np.array(trajectories))
-        agent.learn()
-        print("Learning finished for ", i , "episode")
+            episode_rewards.append(score)
+            print("Learning.....")
+            # trajectories = torch.FloatTensor(np.array(trajectories))
+            agent.learn()
+            print("Learning finished for ", i , "episode")
 
-        # print(f"Episode {i} finished. Reward: {episode_reward}")
+            # print(f"Episode {i} finished. Reward: {episode_reward}")
 
-        if (i + 1) % eval_interval == 0:
-            mean_reward, std_reward = evaluate(agent, env)
-            print(f"Evaluation after {i+1} episodes: Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}")
-    print(episode_rewards)
-    # Save the model after training
-    agent.save_models()
+            if (i + 1) % eval_interval == 0:
+                mean_reward, std_reward = evaluate(agent, env)
+                print(f"Evaluation after {i+1} episodes: Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}")
+        print(episode_rewards)
+        # Save the model after training
+        agent.save_models()
+    except Exception as e:
+        print(f"An error occurred during episode {i}: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
     # Plot episode rewards
     plt.figure(figsize=(10, 5))

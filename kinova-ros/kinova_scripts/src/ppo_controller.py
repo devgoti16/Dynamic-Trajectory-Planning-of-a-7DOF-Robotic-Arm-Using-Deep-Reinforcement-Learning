@@ -28,21 +28,24 @@ from  stable_baselines.common.vec_env import DummyVecEnv
 from tqdm import tqdm
 from torch.distributions import MultivariateNormal, Normal
 from collections import namedtuple,deque
-
+import matplotlib
+#matplotlib.use('Agg')  # Use a non-interactive backend
 torch.autograd.set_detect_anomaly(True)
+from torch.utils.tensorboard import SummaryWriter
+import datetime
 
-class ReplayBuffer:
-    def __init__(self, capacity):
-        self.buffer = deque(maxlen=capacity)
+# class ReplayBuffer:
+#     def __init__(self, capacity):
+#         self.buffer = deque(maxlen=capacity)
     
-    def push(self, state, action, reward, next_state, done):
-        self.buffer.append((state, action, reward, next_state, done))
+#     def push(self, state, action, reward, next_state, done):
+#         self.buffer.append((state, action, reward, next_state, done))
     
-    def sample(self, batch_size):
-        return random.sample(self.buffer, batch_size)
+#     def sample(self, batch_size):
+#         return random.sample(self.buffer, batch_size)
     
-    def __len__(self):
-        return len(self.buffer)
+#     def __len__(self):
+#         return len(self.buffer)
     
 
 class Jaco2Env(gym.Env):
@@ -95,10 +98,14 @@ class Jaco2Env(gym.Env):
     def joint_state_callback(self,msg):
         angles = msg.position[:7]
         velocities = msg.velocity[:7]
-        # self.states = angles + velocities
+        #self.states = angles + velocities
         with self.states_lock :
             self.states = angles + velocities
         #print("callback details:",self.states)
+
+    def get_current_state(self):
+        with self.states_lock:
+            return self.states
 
     def update_goal_position(self):
         self.goal_position += np.random.uniform(low=-0.05, high=0.05, size=3)  # Random continuous motion
@@ -108,9 +115,9 @@ class Jaco2Env(gym.Env):
         # self.state[14:] = self.goal_position
 
     def calculate_reward(self, distance):
-        distance_reward = -distance
+        #distance_reward = -distance
         exp_distance_penalty = -np.exp(distance)
-        reward = distance_reward + exp_distance_penalty
+        reward =  exp_distance_penalty
         return reward
     
     def forward_kinematics(self, joint_angles):
@@ -188,10 +195,11 @@ class Jaco2Env(gym.Env):
             self.pause()
         except (rospy.ServiceException) as e:
             print("/gazebo/pause_physics service call failed")
-        #self.update_goal_position() 
+        self.update_goal_position() 
         #print("current state taken from topic:", self.states) # Update the goal position continuously
-        end_effector_position = self.compute_position(self.states[:7])
-        next_state = np.concatenate((self.states, end_effector_position))
+        current_state = self.get_current_state()
+        end_effector_position = self.compute_position(current_state[:7])
+        next_state = np.concatenate((current_state, end_effector_position))
         distance_to_goal = np.linalg.norm(end_effector_position - self.goal_position)     
         reward = self.calculate_reward(distance_to_goal)
         done = distance_to_goal < 0.05  # Close enough to goal
@@ -225,9 +233,9 @@ class Jaco2Env(gym.Env):
             self.pause()
         except (rospy.ServiceException) as e:
             print("/gazebo/pause_physics service call failed")
-        current_state = self.states
+        current_state = self.get_current_state()
         #print("current state taken from topic:", current_state)
-        end_effector_position = self.compute_position(self.states[:7])
+        end_effector_position = self.compute_position(current_state[:7])
         return np.concatenate((current_state, end_effector_position))
     
 
@@ -279,7 +287,9 @@ class Agent:
         self.batch_size = batch_size
         self.eps_clip = eps_clip
         self.MseLoss = nn.MSELoss()
-        self.replay_buffer = ReplayBuffer(10000)
+        #self.replay_buffer = ReplayBuffer(10000)
+        self.actor_loss = 0
+        self.critic_loss = 0
 
     # def learn(self):
     #     for _ in range(self.n_epochs):
@@ -289,11 +299,12 @@ class Agent:
             os.makedirs(path)
         torch.save(self.actor_network.state_dict(), os.path.join(path, 'actor.pth'))
         torch.save(self.critic_network.state_dict(), os.path.join(path, 'critic.pth'))
+        print(f"Models saved to {path}")
 
     def load_models(self, path='models'):
         self.actor_network.load_state_dict(torch.load(os.path.join(path, 'actor.pth')))
         self.critic_network.load_state_dict(torch.load(os.path.join(path, 'critic.pth')))
-
+        print(f"Models loaded from {path}")
 
     def select_action(self,state):
         #print("state :", state)
@@ -334,6 +345,7 @@ class Agent:
         rewards = torch.tensor(rewards, dtype=torch.float32)
         next_states = torch.tensor(next_states, dtype=torch.float32)
         dones = torch.tensor(dones, dtype=torch.bool)
+        
 
         with torch.no_grad():
             values = self.critic_network(states).squeeze()
@@ -383,19 +395,36 @@ class Agent:
 
                 self.actor_optimizer.step()
                 self.critic_optimizer.step()
+        self.actor_loss = policy_loss.item()
+        self.critic_loss = value_loss.item()
 
 def evaluate(agent, env, num_episodes=10):
     total_rewards = []
+    episode_lengths = []
     for _ in range(num_episodes):
         observation = env.reset()
         episode_reward = 0
         done = False
-        while not done:
+        step = 0
+        while not done and step < 200:
             action, _ = agent.select_action(observation)
             observation, reward, done, _ = env.step(action)
             episode_reward += reward
+            step += 1
         total_rewards.append(episode_reward)
-    return np.mean(total_rewards), np.std(total_rewards)
+        episode_lengths.append(step)
+    return np.mean(total_rewards), np.std(total_rewards), np.mean(episode_lengths)
+
+
+def evaluate_saved_model(model_path, env, num_episodes=50):
+    evaluation_agent = Agent(state_dim=env.observation_space.shape[0], action_dim=env.action_space.shape[0])
+    evaluation_agent.load_models(model_path)
+    
+    mean_reward, std_reward, mean_length = evaluate(evaluation_agent, env, num_episodes=num_episodes)
+    print(f"Evaluation of model from {model_path}:")
+    print(f"Mean reward: {mean_reward:.2f} ± {std_reward:.2f}, Mean length: {mean_length:.2f}")
+    
+    return mean_reward, std_reward, mean_length
 
 
 
@@ -421,69 +450,111 @@ if __name__ == '__main__':
 
     # #env = Dumm
     # # env.reset()
-    n_episodes = 200
-    max_timesteps = 200
+    n_episodes = 12
+    max_timesteps = 15
     eval_interval = 10
     episode_rewards = []
+    evaluate_interval = 100  # Set to None to disable intermediate evaluation
+    save_best_model = True   # Set to False if you only want to save the final model
+
+    best_eval_reward = float('-inf')
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    log_dir = f'runs/jaco2_ppo_{current_time}'
+    writer = SummaryWriter(log_dir)
 
     # agent.load_models()
-    best_score = 0
     print("Training begins")
-    for i in range(n_episodes):
-        print("Epsiode :", i)
-        observation = env.reset()
-        done = False
-        score = 0
+    try :
+        for i in range(n_episodes):
+            print("Epsiode :", i)
+            observation = env.reset()
+            # print(("test2"))
+            done = False
+            score = 0
+            # print("test3")
+            trajectories = []
+            print("............Environment resetted..............")
+            for t in range(max_timesteps):
+                print(f"  Step: {t}")
+                # print("observation :", observation)
+                action,log_prob = agent.select_action(observation)
+                print(f"  Action selected: {action}")
+                next_observation, reward, done, info = env.step(action)
+                print(f"  Reward: {reward}")
+                score += reward
+                # print("action :",action)
+                trajectories.append([observation, action,log_prob, reward, next_observation, done])
+                observation = next_observation
 
-        trajectories = []
-        print("............Environment resetted..............")
-        for t in range(max_timesteps):
-            print(f"  Step: {t}")
-            # print("observation :", observation)
-            action,log_prob = agent.select_action(observation)
-            print(f"  Action selected: {action}")
-            next_observation, reward, done, info = env.step(action)
-            print(f"  Reward: {reward}")
-            score += reward
-            # print("action :",action)
-            trajectories.append([observation, action,log_prob, reward, next_observation, done])
-            observation = next_observation
+                if done :
+                    print("Episodic task completed early")
+                    break
+            print(f"Total for {i} episode is {score}")
 
-            if done :
-                print("Episodic task completed early")
-                break
-        print(f"Total for {i} episode is {score}")
-
-        episode_rewards.append(score)
-        print("Learning.....")
-        # trajectories = torch.FloatTensor(np.array(trajectories))
-        agent.learn(trajectories)
-        print("Learning finished for ", i , "episode")
-
-        # print(f"Episode {i} finished. Reward: {episode_reward}")
-
-        if (i + 1) % eval_interval == 0:
-            mean_reward, std_reward = evaluate(agent, env)
-            print(f"Evaluation after {i+1} episodes: Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}")
-    print(episode_rewards)
-    # Save the model after training
-    agent.save_models()
-
-    # Plot episode rewards
-    plt.figure(figsize=(10, 5))
-    plt.plot(episode_rewards)
-    plt.title('Episode Rewards')
-    plt.xlabel('Episode')
-    plt.ylabel('Reward')
-    plt.savefig('episode_rewards.png')
-    plt.show()
-
-    # Final evaluation
-    mean_reward, std_reward = evaluate(agent, env, num_episodes=50)
-    print(f"Final evaluation: Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}")
+            episode_rewards.append(score)
+            writer.add_scalar('Training/Episode Reward', score, i)
+            writer.add_scalar('Training/Episode Length', t+1, i)
 
 
-        # if(i%10):
+            print("Learning.....")
+            # trajectories = torch.FloatTensor(np.array(trajectories))
+            agent.learn(trajectories)
+            print("Learning finished for ", i , "episode")
+
+            writer.add_scalar('Training/Actor Loss', agent.actor_loss, i)
+            writer.add_scalar('Training/Critic Loss', agent.critic_loss, i)
+
+            # print(f"Episode {i} finished. Reward: {episode_reward}")
+
+            if (i + 1) % eval_interval == 0:
+                mean_reward, std_reward, mean_length = evaluate(agent, env)
+                writer.add_scalar('Evaluation/Mean Reward', mean_reward, i)
+                writer.add_scalar('Evaluation/Std Reward', std_reward, i)
+                writer.add_scalar('Evaluation/Mean Episode Length', mean_length, i)
+                
+                print(f"Evaluation after {i+1} episodes: Mean reward: {mean_reward:.2f} ± {std_reward:.2f}, Mean length: {mean_length:.2f}")
+                
+                if mean_reward > best_eval_reward:
+                    best_eval_reward = mean_reward
+                    agent.save_models(f'best_model_episode_{i+1}')
+                    print(f"New best model saved at episode {i+1}")
+
+        print(episode_rewards)
+        #Save the model after training
+        agent.save_models()
+
+        #Plot episode rewards
+        # plt.figure(figsize=(10, 5))
+        # plt.plot(episode_rewards)
+        # plt.title('Episode Rewards')
+        # plt.xlabel('Episode')
+        # plt.ylabel('Reward')
+        # plt.savefig('episode_rewards.png')
+        # plt.show()
+
+    
+        # Final evaluation
+        print("loading model")
+        agent.load_models('final_model')
+        print("model loaded")
+        final_mean_reward, final_std_reward, final_mean_length = evaluate(agent, env, num_episodes=50)
+        print(f"Final evaluation: Mean reward: {final_mean_reward:.2f} ± {final_std_reward:.2f}, Mean length: {final_mean_length:.2f}")
+        
+        # # Evaluate the best model
+        # best_model_path = f'best_model_episode_{best_episode}'  # Replace best_episode with the actual episode number
+        # evaluate_saved_model(best_model_path, env)
+
+        # # Evaluate the final model
+        # evaluate_saved_model('final_model', env)
+
+        writer.close()
+
+            # if(i%10):
         #     agent.save_models()
         # print(f"Episode : {i}, score : {score}")
     
+    except rospy.ROSInterruptException:
+        pass
+
+    finally : 
+        rospy.signal_shutdown("Training complete")
