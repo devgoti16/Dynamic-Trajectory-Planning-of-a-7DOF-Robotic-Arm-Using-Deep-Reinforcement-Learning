@@ -257,31 +257,30 @@ class Jaco2Env(gym.Env):
 
 
 class ActorNetwork(nn.Module):
-    def __init__(self,n_actions, state_dim,fc1_dims = 256, fc2_dims = 128, chkpt_dir = 'tmp/ppo'):
-        super(ActorNetwork,self).__init__()
-        self.fc1 = nn.Linear(state_dim, fc1_dims).to(torch.float32)
-        self.fc2 = nn.Linear(fc1_dims, fc2_dims).to(torch.float32)
-        self.mean = nn.Linear(fc2_dims, n_actions).to(torch.float32)
-        self.log_std = nn.Parameter(torch.zeros(n_actions, dtype=torch.float32))
+    def __init__(self, n_actions, state_dim, fc1_dims=256, fc2_dims=128, chkpt_dir='tmp/ppo'):
+        super(ActorNetwork, self).__init__()
+        self.fc1 = nn.Linear(state_dim, fc1_dims).to(device)
+        self.fc2 = nn.Linear(fc1_dims, fc2_dims).to(device)
+        self.mean = nn.Linear(fc2_dims, n_actions).to(device)
+        self.log_std = nn.Parameter(torch.zeros(n_actions).to(device))
 
-
-    def forward(self,x):
+    def forward(self, x):
+        x = x.to(device)
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
         mean = self.mean(x)
-        std = self.log_std.exp() #.expand_as(mean)
+        std = self.log_std.exp()
         return mean, std
 
-
-
 class CriticNetwork(nn.Module):
-    def __init__(self, state_dim,fc1_dims = 256, fc2_dims = 128, chkpt_dir = 'tmp/ppo'):
-        super(CriticNetwork,self).__init__()
-        self.fc1 = nn.Linear(state_dim, fc1_dims).to(torch.float32)
-        self.fc2 = nn.Linear(fc1_dims, fc2_dims).to(torch.float32)
-        self.value = nn.Linear(fc2_dims, 1).to(torch.float32)
+    def __init__(self, state_dim, fc1_dims=256, fc2_dims=128, chkpt_dir='tmp/ppo'):
+        super(CriticNetwork, self).__init__()
+        self.fc1 = nn.Linear(state_dim, fc1_dims).to(device)
+        self.fc2 = nn.Linear(fc1_dims, fc2_dims).to(device)
+        self.value = nn.Linear(fc2_dims, 1).to(device)
 
-    def forward(self,x):
+    def forward(self, x):
+        x = x.to(device)
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
         value = self.value(x)
@@ -292,8 +291,8 @@ class CriticNetwork(nn.Module):
 
 class Agent:
     def __init__ (self, state_dim, action_dim, lr = 3e-4, gamma = 0.99, eps_clip = 0.2,epsilon = 0.2,lmbda = 0.95, epoch = 30, batch_size = 32):
-        self.actor_network = ActorNetwork(action_dim,state_dim)
-        self.critic_network = CriticNetwork(state_dim)
+        self.actor_network = ActorNetwork(action_dim,state_dim).to(device)
+        self.critic_network = CriticNetwork(state_dim).to(device)
         self.actor_optimizer = optim.Adam(self.actor_network.parameters(),lr = lr)
         self.critic_optimizer = optim.Adam(self.critic_network.parameters(),lr = lr)
         self.gamma = gamma
@@ -321,14 +320,14 @@ class Agent:
         print(f"Models saved to {path}")
 
     def load_models(self, path='models'):
-        self.actor_network.load_state_dict(torch.load(os.path.join(path, 'actor.pth')))
-        self.critic_network.load_state_dict(torch.load(os.path.join(path, 'critic.pth')))
+        self.actor_network.load_state_dict(torch.load(os.path.join(path, 'actor.pth'), map_location=device))
+        self.critic_network.load_state_dict(torch.load(os.path.join(path, 'critic.pth'), map_location=device))
         print(f"Models loaded from {path}")
 
     def select_action(self,state):
         #print("state :", state)
         with torch.no_grad():
-            state = torch.tensor(state,dtype=torch.float32).unsqueeze(0)
+            state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
             mean, std = self.actor_network(state)
         #print("mean : ", mean, " & state : ", std)
         mean = torch.nan_to_num(mean, nan=0.0)
@@ -339,24 +338,29 @@ class Agent:
         action = dist.sample()
         action = 2*(torch.tanh(action))
         action_log_prob = dist.log_prob(action)   #.sum(dim=1)
-        return action.detach().numpy()[0],action_log_prob.detach()
+        return action.cpu().detach().numpy()[0],action_log_prob.cpu().detach()
     
     def compute_advantages(self, rewards, values, next_values, dones):
         advantages = []
         gae = 0
+        
+        # Ensure inputs are numpy arrays
         rewards = np.atleast_1d(rewards)
         values = np.atleast_1d(values)
         next_values = np.atleast_1d(next_values)
         dones = np.atleast_1d(dones)
+    
         for step in reversed(range(len(rewards))):
             if step == len(rewards) - 1:
                 next_value = 0  # For the last step, there is no next state
             else:
                 next_value = next_values[step]
-            delta = rewards[step] + self.gamma * next_value * (~dones[step]) - values[step]
-            gae = delta + self.gamma * self.lmbda * (~dones[step]) * gae
+            
+            delta = rewards[step] + self.gamma * next_value * (1 - dones[step]) - values[step]
+            gae = delta + self.gamma * self.lmbda * (1 - dones[step]) * gae
             advantages.insert(0, gae)
-        return advantages
+    
+        return np.array(advantages)
 
     def learn(self, trajectories):
 
@@ -368,24 +372,25 @@ class Agent:
         # print(states,actions,log_probs,rewards,next_states,dones)
         # print(states.dtype())
         #print(f"Learning step - Trajectories: {len(trajectories)}, States shape: {np.shape(states)}")
-        states = torch.tensor(states, dtype=torch.float32)
-        actions = torch.tensor(actions, dtype=torch.float32)
-        old_log_probs = torch.stack(log_probs)
-        rewards = torch.tensor(rewards, dtype=torch.float32)
-        next_states = torch.tensor(next_states, dtype=torch.float32)
-        dones = torch.tensor(dones, dtype=torch.bool)
+        states = torch.tensor(np.array(states), dtype=torch.float32).to(device)
+        actions = torch.tensor(np.array(actions), dtype=torch.float32).to(device)
+        old_log_probs = torch.stack(log_probs).to(device)
+        rewards = torch.tensor(np.array(rewards), dtype=torch.float32).to(device)
+        next_states = torch.tensor(np.array(next_states), dtype=torch.float32).to(device)
+        dones = torch.tensor(np.array(dones), dtype=torch.bool).to(device)
         
 
         with torch.no_grad():
-            values = self.critic_network(states).squeeze()
-            next_values = self.critic_network(next_states).squeeze()
+            values = self.critic_network(states).squeeze().to(device)
+            next_values = self.critic_network(next_states).squeeze().to(device)
             advantages = self.compute_advantages(
             rewards.cpu().numpy(), 
             values.cpu().numpy(), 
             next_values.cpu().numpy(), 
-            dones)
+            dones.cpu().numpy()
+            )
             
-            advantages = torch.tensor(advantages,dtype=torch.float32)
+            advantages = torch.tensor(advantages,dtype=torch.float32).to(device)
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
             returns = advantages + values
@@ -475,7 +480,7 @@ if __name__ == '__main__':
     torch.manual_seed(1)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+    print(f"Using device: {device}")
 
     env = Jaco2Env()
     print("observation space dimension :",env.observation_space.shape[0])
@@ -523,7 +528,7 @@ if __name__ == '__main__':
                 #print(f"  Reward: {reward}")
                 score += reward
                 # print("action :",action)
-                trajectories.append([observation, action,log_prob, reward, next_observation, done])
+                trajectories.append([observation, action, log_prob, reward, next_observation, done])
                 observation = next_observation
 
                 if done :
