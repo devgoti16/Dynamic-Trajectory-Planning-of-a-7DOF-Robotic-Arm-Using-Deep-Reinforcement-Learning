@@ -19,13 +19,56 @@ git clone https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Rob
 cd Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning
 
 3. Install the required dependencies:
-[Add commands to install dependencies, e.g., pip install -r requirements.txt]
+## Installation Guide using Conda
+
+This guide will help you set up the project environment using Conda and install all necessary dependencies.
+
+### Prerequisites
+- Ensure you have Anaconda or Miniconda installed on your system. If not, download and install from [Anaconda's official website](https://www.anaconda.com/products/distribution).
+
+### Steps to create the environment and install dependencies
+
+1. Open your terminal (or Anaconda Prompt on Windows).
+
+2. Create a new Conda environment named "myrosenv":
+conda create --name myrosenv python=3.7
+
+3. Activate the newly created environment:
+   conda activate myrosenv
+4. Install pip inside the Conda environment (if not already installed):
+   conda install pip
+
+5. Navigate to the directory containing your `requirements.txt` file.
+
+6. Install the required packages using pip:
+   pip install -r requirements.txt
+
+7. Verify the installation by listing the installed packages:
+   pip list
+### Using the environment
+
+- To activate the environment in the future, use:
+conda activate myrosenv
+- To deactivate the environment when you're done, use:
+conda deactivate
+
+Note: If you encounter any issues during installation, ensure that both Conda and pip are up to date:
+conda update conda
+pip install --upgrade pip
+
+
 
 ## Usage
 [Provide instructions on how to use your project, including any command-line instructions, API usage, or example code]
 
 ## Dependencies
-- [List major dependencies and their versions]
+- tf==1.13.2
+- torch==1.13.1+cu116
+- numpy==1.21.5
+- keras==2.11.0
+- gazebo_ros==2.9.2
+
+
 
 ## Contributing
 Contributions to this project are welcome. Please follow these steps to contribute:
