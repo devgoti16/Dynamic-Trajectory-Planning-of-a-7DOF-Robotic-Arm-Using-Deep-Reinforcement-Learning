@@ -71,20 +71,11 @@ cd Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Le
 
 
 
-## Contributing
-Contributions to this project are welcome. Please follow these steps to contribute:
-
-1. Fork the repository
-2. Create a new branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
 ## License
 [Specify the license under which this project is released]
 
 ## Contact
-[Your Name] - [Your Email]
+Dev Goti - [devgoti1683@gmail.com]
 
 Project Link: [https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning](https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning)
 
