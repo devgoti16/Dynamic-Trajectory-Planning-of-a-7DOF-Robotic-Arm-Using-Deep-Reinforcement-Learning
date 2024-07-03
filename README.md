@@ -34,6 +34,7 @@ This project focuses on developing a dynamic trajectory planning system for a ro
 ```sh
 git clone https://github.com/yourusername/your-repo.git
 cd your-repo
+```sh
 
 ### Setting up the environment
 # Example for setting up a virtual environment
