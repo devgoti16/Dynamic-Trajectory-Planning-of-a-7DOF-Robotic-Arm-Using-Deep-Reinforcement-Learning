@@ -68,6 +68,12 @@ cd Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Le
 - numpy==1.21.5
 - keras==2.11.0
 - gazebo_ros==2.9.2
+- gazebo_plugins==2.9.2
+- gym==0.26.2
+- gymnasium==0.28.1
+- joint-state-publisher==1.15.1
+- joint-state-publisher-gui==1.15.1
+- tensorboard==2.11.2
 
 
 
