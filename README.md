@@ -24,16 +24,26 @@ This project focuses on developing a dynamic trajectory planning system for a ro
 ## Installation
 
 ### Prerequisites
-- Python 3.8 or higher
+- Python 3.7
 - ROS Noetic
-- TensorFlow 2.x
+- TensorFlow 1.15.0
+- PyTorch 1.13.1
 - Other dependencies listed in `requirements.txt`
-- Hardware: Kinova Jaco2 robotic arm, sensors
+
+### Setting up the environment
+conda create -n myrosenv python=3.7
+conda activate myrosenv
+pip install -r requirements.txt
 
 ### Cloning the Repository
 ```sh
-git clone https://github.com/yourusername/your-repo.git
-cd your-repo
+$ mkdir catkin_ws/src
+$ cd catkin_ws
+$ catkin_make
+$ cd src
+$ git clone https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning.git
+$ cd ..
+$ caktin_make
 ```
 
 ### Setting up the environment
