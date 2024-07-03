@@ -86,4 +86,15 @@ Dev Goti - devgoti1683@gmail.com
 Project Link: [https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning](https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning)
 
 ## Acknowledgments
-- [List any acknowledgments, resources, or inspirations]
+- KINOVA JACO2 Arm repo  : [kinova-ros](https://github.com/Kinovarobotics/kinova-ros)
+
+
+
+
+
+
+
+
+
+
+
