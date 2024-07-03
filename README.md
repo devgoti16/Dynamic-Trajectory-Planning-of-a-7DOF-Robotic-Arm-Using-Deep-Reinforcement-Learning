@@ -9,17 +9,7 @@ This project implements dynamic trajectory planning for a 7 Degree of Freedom (D
 - Real-time optimization of movement paths
 - [Add more features specific to your project]
 
-## Installation
-To set up this project locally, follow these steps:
-
-1. Clone the repository:
-git clone https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning.git
-
-2. Navigate to the project directory:
-cd Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning
-
-3. Install the required dependencies:
-## Installation Guide using Conda
+## Installation Guide
 
 This guide will help you set up the project environment using Conda and install all necessary dependencies.
 
@@ -55,6 +45,14 @@ conda deactivate
 Note: If you encounter any issues during installation, ensure that both Conda and pip are up to date:
 conda update conda
 pip install --upgrade pip
+
+8.To set up this project locally, follow these steps:
+
+a. Clone the repository:
+git clone https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning.git
+
+b. Navigate to the project directory:
+cd Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning
 
 
 
