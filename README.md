@@ -3,6 +3,9 @@
 ## Description
 This project implements dynamic trajectory planning for a 7 Degree of Freedom (DOF) robotic arm using Deep Reinforcement Learning techniques. It aims to optimize the arm's movement path in real-time, considering various environmental constraints and task objectives.
 
+## Supported Version
+Ubuntu 20.04 and ROS Noetic
+
 ## Features
 - Dynamic trajectory planning for a 7DOF robotic arm
 - Deep Reinforcement Learning implementation
