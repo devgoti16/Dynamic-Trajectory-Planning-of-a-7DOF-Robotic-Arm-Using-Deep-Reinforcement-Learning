@@ -90,6 +90,13 @@ class Jaco2Env(gym.Env):
         self.callback_thread.daemon = True
         self.callback_thread.start()
 
+        self.last_action = 0
+        self.last_distance = 0
+
+        self.joint_lower_limits = [-2*np.pi, 47/180*np.pi, -2*np.pi, 30/180*np.pi, -2*np.pi, 65/180*np.pi, -2*np.pi]
+        self.joint_upper_limits = [2*np.pi, 313/180*np.pi, 2*np.pi, 330/180*np.pi, 2*np.pi, 295/180*np.pi, 2*np.pi]
+        self.joint_velocity_limits = [36/180*np.pi, 36/180*np.pi, 36/180*np.pi, 36/180*np.pi, 48/180*np.pi, 48/180*np.pi, 48/180*np.pi]
+
     def run_callback(self):
         """Run ROS callbacks in a separate thread."""
         rospy.spin()
@@ -125,22 +132,30 @@ class Jaco2Env(gym.Env):
             float: Calculated reward
         """
         distance_reward = -distance
+        joint_angles = current_position[:7]
         progress = previous_distance - distance if previous_distance is not None else 0
-        progress_reward = 3 * progress if progress > 0 else -10
+        progress_reward = 30 * progress if progress > 0 else -500
         action_smoothness = -0.1 * np.sum(np.square(action - previous_action)) if previous_action is not None else 0
-        exploration_reward = 0
-        energy_penalty = -0.01 * np.sum(np.square(action))
+        energy_penalty = -0.1* np.sum(np.square(action))
+        joint_limit_penalty = -sum(abs(pos - limit[0]) + abs(pos - limit[1])  for pos,limit in zip(joint_angles, zip(self.joint_lower_limits,self.joint_upper_limits)))
+        velocity_limit_penalty = -sum(abs(vel)/limit for vel,limit in zip(action,self.joint_velocity_limits))
+
         
         reward = (
-            0.03 * distance_reward +
-            0.05 * progress_reward +
-            0.01 * action_smoothness +
-            exploration_reward  +
-            0.02 * energy_penalty
+            0.35 * distance_reward +
+            0.1 * progress_reward +
+            0.2 * action_smoothness + 
+            0.02 * energy_penalty+
+            0.05 * joint_limit_penalty + 
+            0.01 * velocity_limit_penalty
         )
+
+        reward = reward/1000
         
-        if distance < 0.5:
-            reward += 200
+        if distance < 0.3:
+            reward += 100
+
+        #print(reward)
         return reward
     
     def forward_kinematics(self, joint_angles):
@@ -219,6 +234,9 @@ class Jaco2Env(gym.Env):
         distance_to_goal = np.linalg.norm(end_effector_position - self.goal_position)     
         reward = self.calculate_reward(distance_to_goal, current_state, action, self.last_action, self.last_distance)
         done = distance_to_goal < 0.5
+
+        self.last_distance = distance_to_goal
+        self.last_action = action
 
         return next_state, reward, done, {}
 
@@ -307,7 +325,7 @@ class Agent:
     """
     PPO Agent implementation.
     """
-    def __init__ (self, state_dim, action_dim, lr = 3e-4, gamma = 0.99, eps_clip = 0.2,epsilon = 0.2,lmbda = 0.95, epoch = 30, batch_size = 32):
+    def __init__ (self, state_dim, action_dim, lr = 3e-3, gamma = 0.99, eps_clip = 0.2,epsilon = 0.2,lmbda = 0.95, epoch = 20, batch_size = 32):
         self.actor_network = ActorNetwork(action_dim,state_dim).to(device)
         self.critic_network = CriticNetwork(state_dim).to(device)
         self.actor_optimizer = optim.Adam(self.actor_network.parameters(),lr = lr)
@@ -328,8 +346,8 @@ class Agent:
         """Save the actor and critic models."""
         if not os.path.exists(path):
             os.makedirs(path)
-        torch.save(self.actor_network.state_dict(), os.path.join(path, 'actor.pth'))
-        torch.save(self.critic_network.state_dict(), os.path.join(path, 'critic.pth'))
+        torch.save(self.actor_network.state_dict(), os.path.join(path, 'actor_{current_time}.pth'))
+        torch.save(self.critic_network.state_dict(), os.path.join(path, 'critic_{current_time}.pth'))
         print(f"Models saved to {path}")
 
     def load_models(self, path='models'):
@@ -356,8 +374,8 @@ class Agent:
         cov_matrix = torch.diag(std**2) 
         dist = MultivariateNormal(mean,covariance_matrix=cov_matrix)
         action = dist.sample()
-        action = 2*(torch.tanh(action))
-        action_log_prob = dist.log_prob(action)
+        action = 0.6*(torch.tanh(action))
+        action_log_prob = dist.log_prob(action).sum(dim=-1)
         return action.cpu().detach().numpy()[0], action_log_prob.cpu().detach()
     
     def compute_advantages(self, rewards, values, next_values, dones):
@@ -483,7 +501,7 @@ class Agent:
         self.actor_loss = policy_loss.item()
         self.critic_loss = value_loss.item()
 
-def evaluate(agent, env, num_episodes=5):
+def evaluate(agent, env, num_episodes=10):
     """
     Evaluate the agent's performance.
     
@@ -538,7 +556,7 @@ if __name__ == '__main__':
     batch_size = 32
     TIME_DELTA = 0
     n_episodes = 500
-    max_timesteps = 1000
+    max_timesteps = 1500
     eval_interval = 100
 
     # Initialize lists and variables for tracking progress
