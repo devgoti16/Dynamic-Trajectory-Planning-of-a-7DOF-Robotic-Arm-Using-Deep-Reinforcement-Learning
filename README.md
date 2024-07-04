@@ -52,6 +52,35 @@ conda create -n drl_robotic_arm python=3.8
 conda activate drl_robotic_arm
 pip install -r requirements.txt
 
+### File Structure
+```
+project-root/
+│
+├── ppo_controller_gpu.py    # Main script for PPO training on GPU
+├── requirements.txt         # List of project dependencies
+├── README.md                # Project documentation
+│
+├── models/                  # Trained model checkpoints
+│   ├── model_latest.pth
+│   └── model_best.pth
+│
+├── data/                    # Dataset and configuration files
+│   ├── robot_config.yaml
+│   └── environment_params.json
+│
+├── scripts/
+│   ├── preprocess_data.py   # Data preprocessing script
+│   └── evaluate_model.py    # Model evaluation script
+│
+├── utils/
+│   ├── env_wrapper.py       # Environment wrapper for RL
+│   └── custom_layers.py     # Custom neural network layers
+│
+└── results/                 # Output directory for logs and results
+├── training_logs/
+└── evaluation_results/
+```
+
 ### Implementation
 
 python ppo_controller_gpu.py
