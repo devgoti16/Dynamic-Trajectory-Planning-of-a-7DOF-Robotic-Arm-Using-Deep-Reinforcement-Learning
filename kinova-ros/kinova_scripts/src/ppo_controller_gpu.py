@@ -1,4 +1,11 @@
 #!/home/dev/anaconda3/envs/myrosenv/bin/python
+
+"""
+This script implements a Proximal Policy Optimization (PPO) algorithm for training a Jaco2 robotic arm
+in a ROS/Gazebo environment. It uses PyTorch for the neural network implementation and ROS for
+robot control and simulation.
+"""
+
 import rospy
 import gym
 import threading
@@ -32,21 +39,20 @@ from torch.utils.tensorboard import SummaryWriter
 import datetime 
 
 class Jaco2Env(gym.Env):
+    """
+    Custom Gym environment for the Jaco2 robotic arm.
+    This environment interfaces with ROS and Gazebo to control the Jaco2 arm.
+    """
+
     def __init__(self):
-
-
         super(Jaco2Env, self).__init__()
+        # Define action and observation space
         self.action_dim = 7
         self.obs_dim = 17
-
-        # Define action and observation space
-        # Assuming the arm has 7 joints, each with a velocity range [-1, 1]
         self.action_space = spaces.Box(low=-1, high=1, shape=(7,), dtype=np.float64)
-
-        # Observation space, assuming joint angles and velocities and end effefctor coordinates as states
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(17,), dtype=np.float64)
 
-
+        # Launch ROS core and Gazebo
         port = "11311"
         self.launfile = "velocity_control.launch"
         subprocess.Popen(["roscore","-p",port])
@@ -54,6 +60,8 @@ class Jaco2Env(gym.Env):
         rospy.init_node('dqn_controller')
         subprocess.Popen(["roslaunch","-p", "11311","kinova_scripts","velocity_control.launch"])
         print("Gazebo Launched")
+
+        # Initialize ROS subscribers and publishers
         self.states = np.zeros(14)
         self.joint_state_sub = rospy.Subscriber('j2s7s300/joint_states', JointState, self.joint_state_callback)
         self.joint_vel_pub1 = rospy.Publisher('/j2s7s300/joint_1_velocity_controller/command', Float64, queue_size=1)
@@ -63,82 +71,88 @@ class Jaco2Env(gym.Env):
         self.joint_vel_pub5 = rospy.Publisher('/j2s7s300/joint_5_velocity_controller/command', Float64, queue_size=1)     
         self.joint_vel_pub6 = rospy.Publisher('/j2s7s300/joint_6_velocity_controller/command', Float64, queue_size=1)     
         self.joint_vel_pub7 = rospy.Publisher('/j2s7s300/joint_7_velocity_controller/command', Float64, queue_size=1)             
+
+        # Set up ROS services
         self.unpause = rospy.ServiceProxy("/gazebo/unpause_physics",Empty)
         self.pause = rospy.ServiceProxy("/gazebo/pause_physics",Empty)
         self.reset_proxy = rospy.ServiceProxy("/gazebo/reset_simulation",Empty)
-        # rospy.spin()
         print("all service and topics called")
+
+        # Robot parameters
         self.d_parameters = [0.2755,0.2050,0.2050,0.2073,0.1038,0.1038,0.1600,0.0098] #d1,d2,d3,d4,d5,d6,d7,e2  
+        
+        # Initialize state variables
         self.states = None
         self.states_lock = threading.Lock()
+        
+        # Start ROS callback thread
         self.callback_thread = threading.Thread(target = self.run_callback)
         self.callback_thread.daemon = True
         self.callback_thread.start()
 
     def run_callback(self):
+        """Run ROS callbacks in a separate thread."""
         rospy.spin()
 
-    def joint_state_callback(self,msg):
+    def joint_state_callback(self, msg):
+        """Callback function for joint state subscriber."""
         angles = msg.position[:7]
         velocities = msg.velocity[:7]
-        #self.states = angles + velocities
         with self.states_lock :
             self.states = angles + velocities
-        #print("callback details:",self.states)
 
     def get_current_state(self):
+        """Get the current state of the robot."""
         with self.states_lock:
             return self.states
 
     def update_goal_position(self):
-        self.goal_position += np.random.uniform(low=-0.05, high=0.05, size=3)  # Random continuous motion
-        # goal_msg = Pose()
-        # goal_msg.position.x, goal_msg.position.y, goal_msg.position.z = self.goal_position
-        # self.goal_pub.publish(goal_msg)
-        # self.state[14:] = self.goal_position
+        """Update the goal position with a small random perturbation."""
+        self.goal_position += np.random.uniform(low=-0.05, high=0.05, size=3)
 
-    def calculate_reward(self,distance, current_position, action, previous_action=None,previous_distance=None):
-        # Distance to goal
-        distance_reward = -distance
-
-        # Progress towards goal
+    def calculate_reward(self, distance, current_position, action, previous_action=None, previous_distance=None):
+        """
+        Calculate the reward based on the current state and action.
         
-        progress = previous_distance - distance
-        if progress > 0:
-            progress_reward = 3 * progress  # Reward for moving towards the goal
-        else:
-            progress_reward = -10
-
-        # Action smoothness
-        if previous_action is not None:
-            action_smoothness = -0.1*np.sum(np.square(action - previous_action))
-        else:
-            action_smoothness = 0
-
-        # Encourage exploration in early stages
+        Args:
+            distance (float): Current distance to goal
+            current_position (np.array): Current end-effector position
+            action (np.array): Current action
+            previous_action (np.array): Previous action
+            previous_distance (float): Previous distance to goal
+        
+        Returns:
+            float: Calculated reward
+        """
+        distance_reward = -distance
+        progress = previous_distance - distance if previous_distance is not None else 0
+        progress_reward = 3 * progress if progress > 0 else -10
+        action_smoothness = -0.1 * np.sum(np.square(action - previous_action)) if previous_action is not None else 0
         exploration_reward = 0
-
-        # Penalize being close to joint limits
-        # joint_limit_penalty = self.calculate_joint_limit_penalty()
-
-        # Energy efficiency
         energy_penalty = -0.01 * np.sum(np.square(action))
-
-        # Combine rewards
+        
         reward = (
             0.03 * distance_reward +
             0.05 * progress_reward +
-            0.01* action_smoothness +
+            0.01 * action_smoothness +
             exploration_reward  +
             0.02 * energy_penalty
         )
-
-        # Bonus for reaching the goal
+        
         if distance < 0.5:
             reward += 200
         return reward
     
     def forward_kinematics(self, joint_angles):
+        """
+        Compute forward kinematics for the Jaco2 arm.
+        
+        Args:
+            joint_angles (np.array): Joint angles of the robot
+        
+        Returns:
+            np.array: Transformation matrix
+        """
         dh_parameters = [
             (np.radians(90), 0, -self.d_parameters[0], joint_angles[0]),
             (np.radians(90), 0, 0,  joint_angles[1]),
@@ -154,7 +168,8 @@ class Jaco2Env(gym.Env):
             T_0_n = np.dot(T_0_n, T_i)
         return T_0_n
     
-    def dh_transformation(self,alpha, d, a, theta):
+    def dh_transformation(self, alpha, d, a, theta):
+        """Compute DH transformation matrix."""
         return np.array([
             [np.cos(theta), -np.sin(theta)*np.cos(alpha), np.sin(theta)*np.sin(alpha), a*np.cos(theta)],
             [np.sin(theta), np.cos(theta)*np.cos(alpha), -np.cos(theta)*np.sin(alpha), a*np.sin(theta)],
@@ -162,101 +177,82 @@ class Jaco2Env(gym.Env):
             [0, 0, 0, 1]
         ])
  
-    def compute_position(self,state):
-        # Ensure the current joint states are available
+    def compute_position(self, state):
+        """Compute end-effector position from joint angles."""
         if state is None:
             return np.zeros(len(7))
         joint_angles = np.array(state)
         T__0 = self.forward_kinematics(joint_angles)
         current_position = T__0[:3,3]
-        return current_position
+        return current_position   
     
-    
-    def step(self, action): #perform an action and read a new state
-        joint_vel_msg_1 = Float64()
-        joint_vel_msg_2 = Float64()
-        joint_vel_msg_3 = Float64()
-        joint_vel_msg_4 = Float64()
-        joint_vel_msg_5 = Float64()
-        joint_vel_msg_6 = Float64()
-        joint_vel_msg_7 = Float64()
-        joint_vel_msg_1.data = action[0]
-        joint_vel_msg_2.data = action[1]        
-
+    def step(self, action):
+        """
+        Execute one time step within the environment.
         
-        joint_vel_msg_3.data = action[2] 
-        joint_vel_msg_4.data = action[3] 
-        joint_vel_msg_5.data = action[4] 
-        joint_vel_msg_6.data = action[5] 
-        joint_vel_msg_7.data = action[6]  
-        self.joint_vel_pub1.publish(joint_vel_msg_1)
-        self.joint_vel_pub2.publish(joint_vel_msg_2)
-        self.joint_vel_pub3.publish(joint_vel_msg_3)
-        self.joint_vel_pub4.publish(joint_vel_msg_4)
-        self.joint_vel_pub5.publish(joint_vel_msg_5)
-        self.joint_vel_pub6.publish(joint_vel_msg_6)
-        self.joint_vel_pub7.publish(joint_vel_msg_7)
-        rospy.wait_for_service("/gazebo/unpause_physics")
-        try:
-            self.unpause()
-        except (rospy.ServiceException) as e:
-            print("/gazebo/unpause_physics service call failed")            
-        # time.sleep(TIME_DELTA)
+        Args:
+            action (np.array): Action to be executed
+        
+        Returns:
+            tuple: (next_state, reward, done, info)
+        """
+        # Publish joint velocities
+        for i, pub in enumerate([self.joint_vel_pub1, self.joint_vel_pub2, self.joint_vel_pub3, 
+                                 self.joint_vel_pub4, self.joint_vel_pub5, self.joint_vel_pub6, 
+                                 self.joint_vel_pub7]):
+            joint_vel_msg = Float64()
+            joint_vel_msg.data = action[i]
+            pub.publish(joint_vel_msg)
+
+        # Unpause physics, wait, then pause again
+        self.unpause()
         time.sleep(TIME_DELTA)
-        rospy.wait_for_service("/gazebo/pause_physics")
-        try:
-            self.pause()
-        except (rospy.ServiceException) as e:
-            print("/gazebo/pause_physics service call failed")
+        self.pause()
+
+        # Update goal and get new state
         self.update_goal_position() 
-        #print("current state taken from topic:", self.states) # Update the goal position continuously
         current_state = self.get_current_state()
         end_effector_position = self.compute_position(current_state[:7])
         next_state = np.concatenate((current_state, end_effector_position))
+
+        # Calculate reward and check if done
         distance_to_goal = np.linalg.norm(end_effector_position - self.goal_position)     
-        reward = self.calculate_reward(distance_to_goal,current_state,action,self.last_action,self.last_distance)
-        done = distance_to_goal < 0.5  # Close enough to goal
-         # Large reward for reaching the goal
-        # print("reward : ",reward)
-        # print("next state: ",next_state)
-        # print("distance to goal:",distance_to_goal)
-        # last_action = action
-        # last_distance = distance_to_goal
+        reward = self.calculate_reward(distance_to_goal, current_state, action, self.last_action, self.last_distance)
+        done = distance_to_goal < 0.5
+
         return next_state, reward, done, {}
 
     def reset(self):
-        rospy.wait_for_service("/gazebo/reset_simulation")
-        try :
-            self.reset_proxy()
-        except rospy.ServiceException as e:
-            print("/gazebo/reset_simulation service call failed")
-        rospy.sleep(1)  # Allow time to reset
-        #self.update_goal_position()  # Publish initial goal position
-        # Initialize goal position at a random position within the workspace
+        """
+        Reset the environment to an initial state.
+        
+        Returns:
+            np.array: Initial observation
+        """
+        # Reset simulation
+        self.reset_proxy()
+        rospy.sleep(1)
+
+        # Set new random goal
         self.goal_position = np.random.uniform(low=-3, high=3, size=3)
-        #print("goal position :" , self.goal_position)
-        rospy.wait_for_service("/gazebo/unpause_physics")
-        try:
-            self.unpause()
-        except (rospy.ServiceException) as e:
-            print("/gazebo/unpause_physics service call failed")   
-        # time.sleep(TIME_DELTA)
+
+        # Unpause physics, wait, then pause again
+        self.unpause()
         time.sleep(TIME_DELTA)
-        rospy.wait_for_service("/gazebo/pause_physics")
-        try:
-            self.pause()
-        except (rospy.ServiceException) as e:
-            print("/gazebo/pause_physics service call failed")
+        self.pause()
+
+        # Get initial state
         current_state = self.get_current_state()
         self.last_action = 0
         self.last_distance = 0
-        #print("current state taken from topic:", current_state)
         end_effector_position = self.compute_position(current_state[:7])
+
         return np.concatenate((current_state, end_effector_position))
     
-
-
 class ActorNetwork(nn.Module):
+    """
+    Actor network for the PPO algorithm.
+    """
     def __init__(self, n_actions, state_dim, fc1_dims=256, fc2_dims=128, chkpt_dir='tmp/ppo'):
         super(ActorNetwork, self).__init__()
         self.fc1 = nn.Linear(state_dim, fc1_dims).to(device)
@@ -265,6 +261,15 @@ class ActorNetwork(nn.Module):
         self.log_std = nn.Parameter(torch.zeros(n_actions).to(device))
 
     def forward(self, x):
+        """
+        Forward pass through the network.
+        
+        Args:
+            x (torch.Tensor): Input state
+        
+        Returns:
+            tuple: (mean, std) of the action distribution
+        """
         x = x.to(device)
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
@@ -273,6 +278,9 @@ class ActorNetwork(nn.Module):
         return mean, std
 
 class CriticNetwork(nn.Module):
+    """
+    Critic network for the PPO algorithm.
+    """
     def __init__(self, state_dim, fc1_dims=256, fc2_dims=128, chkpt_dir='tmp/ppo'):
         super(CriticNetwork, self).__init__()
         self.fc1 = nn.Linear(state_dim, fc1_dims).to(device)
@@ -280,16 +288,25 @@ class CriticNetwork(nn.Module):
         self.value = nn.Linear(fc2_dims, 1).to(device)
 
     def forward(self, x):
+        """
+        Forward pass through the network.
+        
+        Args:
+            x (torch.Tensor): Input state
+        
+        Returns:
+            torch.Tensor: Estimated state value
+        """
         x = x.to(device)
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
         value = self.value(x)
         return value
 
-
-
-
 class Agent:
+    """
+    PPO Agent implementation.
+    """
     def __init__ (self, state_dim, action_dim, lr = 3e-4, gamma = 0.99, eps_clip = 0.2,epsilon = 0.2,lmbda = 0.95, epoch = 30, batch_size = 32):
         self.actor_network = ActorNetwork(action_dim,state_dim).to(device)
         self.critic_network = CriticNetwork(state_dim).to(device)
@@ -302,17 +319,13 @@ class Agent:
         self.batch_size = batch_size
         self.eps_clip = eps_clip
         self.MseLoss = nn.MSELoss()
-        #self.replay_buffer = ReplayBuffer(10000)
         self.actor_loss = 0
         self.critic_loss = 0
         self.actor_scheduler = optim.lr_scheduler.StepLR(self.actor_optimizer, step_size=100, gamma=0.9)
         self.critic_scheduler = optim.lr_scheduler.StepLR(self.critic_optimizer, step_size=100, gamma=0.9)
 
-
-    # def learn(self):
-    #     for _ in range(self.n_epochs):
-    #         state_arr
     def save_models(self, path='models'):
+        """Save the actor and critic models."""
         if not os.path.exists(path):
             os.makedirs(path)
         torch.save(self.actor_network.state_dict(), os.path.join(path, 'actor.pth'))
@@ -320,58 +333,77 @@ class Agent:
         print(f"Models saved to {path}")
 
     def load_models(self, path='models'):
+        """Load the actor and critic models."""
         self.actor_network.load_state_dict(torch.load(os.path.join(path, 'actor.pth'), map_location=device))
         self.critic_network.load_state_dict(torch.load(os.path.join(path, 'critic.pth'), map_location=device))
         print(f"Models loaded from {path}")
 
     def select_action(self,state):
-        #print("state :", state)
+        """
+        Select an action based on the current state.
+        
+        Args:
+            state (np.array): Current state
+        
+        Returns:
+            tuple: (action, action_log_prob)
+        """
         with torch.no_grad():
             state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
             mean, std = self.actor_network(state)
-        #print("mean : ", mean, " & state : ", std)
         mean = torch.nan_to_num(mean, nan=0.0)
         std = torch.nan_to_num(std, nan=1.0)
         cov_matrix = torch.diag(std**2) 
-        #print("covariance matrix :",cov_matrix)
         dist = MultivariateNormal(mean,covariance_matrix=cov_matrix)
         action = dist.sample()
         action = 2*(torch.tanh(action))
-        action_log_prob = dist.log_prob(action)   #.sum(dim=1)
-        return action.cpu().detach().numpy()[0],action_log_prob.cpu().detach()
+        action_log_prob = dist.log_prob(action)
+        return action.cpu().detach().numpy()[0], action_log_prob.cpu().detach()
     
     def compute_advantages(self, rewards, values, next_values, dones):
+        """
+        Compute advantage estimates.
+        
+        Args:
+            rewards (np.array): Array of rewards
+            values (np.array): Array of state values
+            next_values (np.array): Array of next state values
+            dones (np.array): Array of done flags
+        
+        Returns:
+            np.array: Computed advantages
+        """
         advantages = []
         gae = 0
-        
-        # Ensure inputs are numpy arrays
         rewards = np.atleast_1d(rewards)
         values = np.atleast_1d(values)
         next_values = np.atleast_1d(next_values)
         dones = np.atleast_1d(dones)
-    
         for step in reversed(range(len(rewards))):
             if step == len(rewards) - 1:
-                next_value = 0  # For the last step, there is no next state
+                next_value = 0
             else:
-                next_value = next_values[step]
-            
+                next_value = next_values[step] 
             delta = rewards[step] + self.gamma * next_value * (1 - dones[step]) - values[step]
             gae = delta + self.gamma * self.lmbda * (1 - dones[step]) * gae
-            advantages.insert(0, gae)
-    
+            advantages.insert(0, gae)  
         return np.array(advantages)
 
     def learn(self, trajectories):
-
+        """
+        Update policy and value function using collected trajectories.
+        
+        Args:
+            trajectories (list): List of trajectory data
+        """
         if not trajectories:
             print("Warning: Empty trajectories. Skipping learning step.")
             return
         
+        # Unpack the trajectories
         states, actions, log_probs, rewards, next_states, dones = zip(*trajectories)
-        # print(states,actions,log_probs,rewards,next_states,dones)
-        # print(states.dtype())
-        #print(f"Learning step - Trajectories: {len(trajectories)}, States shape: {np.shape(states)}")
+        
+        # Convert numpy arrays to PyTorch tensors and move to the correct device
         states = torch.tensor(np.array(states), dtype=torch.float32).to(device)
         actions = torch.tensor(np.array(actions), dtype=torch.float32).to(device)
         old_log_probs = torch.stack(log_probs).to(device)
@@ -379,23 +411,29 @@ class Agent:
         next_states = torch.tensor(np.array(next_states), dtype=torch.float32).to(device)
         dones = torch.tensor(np.array(dones), dtype=torch.bool).to(device)
         
-
         with torch.no_grad():
+            # Compute state values
             values = self.critic_network(states).squeeze().to(device)
             next_values = self.critic_network(next_states).squeeze().to(device)
+            
+            # Compute advantages
             advantages = self.compute_advantages(
-            rewards.cpu().numpy(), 
-            values.cpu().numpy(), 
-            next_values.cpu().numpy(), 
-            dones.cpu().numpy()
+                rewards.cpu().numpy(),
+                values.cpu().numpy(),
+                next_values.cpu().numpy(),
+                dones.cpu().numpy()
             )
             
-            advantages = torch.tensor(advantages,dtype=torch.float32).to(device)
+            # Normalize advantages
+            advantages = torch.tensor(advantages, dtype=torch.float32).to(device)
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
+            
+            # Compute returns
             returns = advantages + values
-
+        
+        # Perform multiple epochs of training
         for _ in range(self.epochs):
+            # Iterate over mini-batches
             for i in range(0, len(states), self.batch_size):
                 batch_indices = slice(i, i + self.batch_size)
                 batch_states = states[batch_indices]
@@ -403,47 +441,60 @@ class Agent:
                 batch_log_probs = old_log_probs[batch_indices]
                 batch_returns = returns[batch_indices]
                 batch_advantages = advantages[batch_indices]
-
+                
+                # Compute new action probabilities
                 mean, std = self.actor_network(batch_states)
-                #print("mean : ",mean)
                 dist = Normal(mean, std)
                 new_log_probs = dist.log_prob(batch_actions).sum(dim=-1)
-                # Clamp the log probability difference
-                log_ratio = new_log_probs - batch_log_probs
-                log_ratio = torch.clamp(log_ratio, -20, 20)
                 
+                # Compute probability ratio
+                log_ratio = new_log_probs - batch_log_probs
+                log_ratio = torch.clamp(log_ratio, -20, 20)  # Prevent numerical instability
                 ratios = torch.exp(log_ratio)
-
+                
+                # Compute surrogate objectives
                 surr1 = ratios * batch_advantages
                 surr2 = torch.clamp(ratios, 1.0 - self.epsilon, 1.0 + self.epsilon) * batch_advantages
+                
+                # Compute actor (policy) loss
                 policy_loss = -torch.min(surr1, surr2).mean()
-                #print("policy loss :",policy_loss)
+                
+                # Compute critic (value) loss
                 value_pred = self.critic_network(batch_states).squeeze()
-                value_loss = F.mse_loss(value_pred , batch_returns)
-                #print("value loss :",value_loss)
-                # self.actor_optimizer.zero_grad()
-                # policy_loss.backward(retain_graph=True)
-                # self.actor_optimizer.step()
-
-                # self.critic_optimizer.zero_grad()
-                # value_loss.backward(retain_graph=True)
-                # self.critic_optimizer.step()
-
+                value_loss = F.mse_loss(value_pred, batch_returns)
+                
+                # Compute total loss
                 total_loss = policy_loss + 0.5 * value_loss
+                
+                # Perform backpropagation
                 self.actor_optimizer.zero_grad()
                 self.critic_optimizer.zero_grad()
                 total_loss.backward()
-                # torch.nn.utils.clip_grad_norm_(self.actor_network.parameters(), 0.5)
-                # torch.nn.utils.clip_grad_norm_(self.critic_network.parameters(), 0.5)
+                
+                # Clip gradients to prevent exploding gradients
                 torch.nn.utils.clip_grad_norm_(self.actor_network.parameters(), max_norm=0.5)
                 torch.nn.utils.clip_grad_norm_(self.critic_network.parameters(), max_norm=0.5)
-
+                
+                # Update network parameters
                 self.actor_optimizer.step()
                 self.critic_optimizer.step()
+        
+        # Store the final loss values for logging
         self.actor_loss = policy_loss.item()
         self.critic_loss = value_loss.item()
 
 def evaluate(agent, env, num_episodes=5):
+    """
+    Evaluate the agent's performance.
+    
+    Args:
+        agent (Agent): The agent to evaluate
+        env (gym.Env): The environment
+        num_episodes (int): Number of episodes to evaluate
+    
+    Returns:
+        tuple: (mean_reward, std_reward, mean_episode_length)
+    """
     total_rewards = []
     episode_lengths = []
     for _ in range(num_episodes):
@@ -460,146 +511,121 @@ def evaluate(agent, env, num_episodes=5):
         episode_lengths.append(step)
     return np.mean(total_rewards), np.std(total_rewards), np.mean(episode_lengths)
 
-
-def evaluate_saved_model(model_path, env, num_episodes=50):
-    evaluation_agent = Agent(state_dim=env.observation_space.shape[0], action_dim=env.action_space.shape[0])
-    evaluation_agent.load_models(model_path)
-    
-    mean_reward, std_reward, mean_length = evaluate(evaluation_agent, env, num_episodes=num_episodes)
-    print(f"Evaluation of model from {model_path}:")
-    print(f"Mean reward: {mean_reward:.2f} ± {std_reward:.2f}, Mean length: {mean_length:.2f}")
-    
-    return mean_reward, std_reward, mean_length
-
-
-
 if __name__ == '__main__':
-
+    # Set random seeds for reproducibility
     random.seed(1)
     np.random.seed(1)
     torch.manual_seed(1)
-    
+
+    # Set up the device (CPU or GPU)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
+    # Initialize the environment
     env = Jaco2Env()
-    print("observation space dimension :",env.observation_space.shape[0])
-    print("action space dimension :",env.action_space.shape[0])
+    print("observation space dimension :", env.observation_space.shape[0])
+    print("action space dimension :", env.action_space.shape[0])
+
+    # Initialize the agent
     agent = Agent(state_dim=env.observation_space.shape[0], action_dim=env.action_space.shape[0])
+
+    # Wait for ROS and Gazebo to initialize
     time.sleep(10)
+
+    # Training parameters
     actor_lr = 0.001
     critic_lr = 0.001
     batch_size = 32
     TIME_DELTA = 0
-
-
-    # #env = Dumm
-    # # env.reset()
     n_episodes = 500
     max_timesteps = 1000
     eval_interval = 100
-    episode_rewards = []
-    evaluate_interval = 100  # Set to None to disable intermediate evaluation
-    save_best_model = True   # Set to False if you only want to save the final model
 
+    # Initialize lists and variables for tracking progress
+    episode_rewards = []
+    evaluate_interval = 100
     best_eval_reward = float('-inf')
+
+    # Set up TensorBoard logging
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_dir = f'runs/jaco2_ppo_{current_time}'
     writer = SummaryWriter(log_dir)
 
-    # agent.load_models()
     print("Training begins")
-    try :
+
+    try:
         for i in range(n_episodes):
-            #print("Epsiode :", i)
+            # Reset the environment and get initial observation
             observation = env.reset()
-            # print(("test2"))
             done = False
             score = 0
-            # print("test3")
             trajectories = []
-            #print("............Environment resetted..............")
+
+            # Run the episode for a maximum number of timesteps
             for t in range(max_timesteps):
-                #print(f"  Step: {t}")
-                # print("observation :", observation)
-                action,log_prob = agent.select_action(observation)
-                #print(f"  Action selected: {action}")
+                # Select an action based on the current observation
+                action, log_prob = agent.select_action(observation)
+
+                # Take a step in the environment
                 next_observation, reward, done, info = env.step(action)
-                #print(f"  Reward: {reward}")
+
+                # Accumulate the reward
                 score += reward
-                # print("action :",action)
+
+                # Store the transition data
                 trajectories.append([observation, action, log_prob, reward, next_observation, done])
+
+                # Update the observation
                 observation = next_observation
 
-                if done :
+                # Check if the episode is done
+                if done:
                     print("Episodic task completed early")
                     break
-            print(f"Total reward for {i} episode is {score}")
 
+            # Print and store the total reward for this episode
+            print(f"Total reward for episode {i} is {score}")
             episode_rewards.append(score)
+
+            # Log training metrics
             writer.add_scalar('Training/Episode Reward', score, i)
             writer.add_scalar('Training/Episode Length', t+1, i)
 
-
-            #print("Learning.....")
-            # trajectories = torch.FloatTensor(np.array(trajectories))
+            # Update the agent
             agent.learn(trajectories)
-            #print("Learning finished for ", i , "episode")
 
+            # Log loss metrics
             writer.add_scalar('Training/Actor Loss', agent.actor_loss, i)
             writer.add_scalar('Training/Critic Loss', agent.critic_loss, i)
 
-            # print(f"Episode {i} finished. Reward: {episode_reward}")
-
+            # Periodic evaluation
             if (i + 1) % eval_interval == 0:
                 mean_reward, std_reward, mean_length = evaluate(agent, env)
                 writer.add_scalar('Evaluation/Mean Reward', mean_reward, i)
                 writer.add_scalar('Evaluation/Std Reward', std_reward, i)
-                writer.add_scalar('Evaluation/Mean Episode Length', mean_length, i)
+                writer.add_scalar('Evaluation/Mean Episode Length', mean_length, i)              
+                print(f"Evaluation after {i+1} episodes: Mean reward: {mean_reward:.2f} ± {std_reward:.2f}, Mean length: {mean_length:.2f}")              
                 
-                print(f"Evaluation after {i+1} episodes: Mean reward: {mean_reward:.2f} ± {std_reward:.2f}, Mean length: {mean_length:.2f}")
-                
+                # Save the best model
                 if mean_reward > best_eval_reward:
                     best_eval_reward = mean_reward
                     agent.save_models(f'best_model_episode_{i+1}')
                     print(f"New best model saved at episode {i+1}")
 
         print(episode_rewards)
-        #Save the model after training
         agent.save_models()
-
-        #Plot episode rewards
-        # plt.figure(figsize=(10, 5))
-        # plt.plot(episode_rewards)
-        # plt.title('Episode Rewards')
-        # plt.xlabel('Episode')
-        # plt.ylabel('Reward')
-        # plt.savefig('episode_rewards.png')
-        # plt.show()
-
-    
-        # Final evaluation
         print("loading model")
         agent.load_models()
         print("model loaded")
+
+        # Final evaluation
         final_mean_reward, final_std_reward, final_mean_length = evaluate(agent, env, num_episodes=50)
         print(f"Final evaluation: Mean reward: {final_mean_reward:.2f} ± {final_std_reward:.2f}, Mean length: {final_mean_length:.2f}")
-        
-        # # Evaluate the best model
-        # best_model_path = f'best_model_episode_{best_episode}'  # Replace best_episode with the actual episode number
-        # evaluate_saved_model(best_model_path, env)
 
-        # # Evaluate the final model
-        # evaluate_saved_model('final_model', env)
-
+        # Close TensorBoard writer
         writer.close()
 
-            # if(i%10):
-        #     agent.save_models()
-        # print(f"Episode : {i}, score : {score}")
-    
     except rospy.ROSInterruptException:
         pass
-
-    finally : 
+    finally:
         rospy.signal_shutdown("Training complete")
