@@ -1,7 +1,7 @@
 # Dynamic Trajectory Planning of a Robotic Arm using Deep Reinforcement Learning
 
 ## Introduction
-This project focuses on developing a dynamic trajectory planning system for a robotic arm using Deep Reinforcement Learning (DRL). The objective is to enable the robotic arm to plan and execute trajectories in real-time to achieve dynamic object grasping.
+This project focuses on developing a dynamic trajectory planning system for a KINOVA JACO2 7DOF robotic arm using Deep Reinforcement Learning (DRL). The objective is to enable the robotic arm to plan and execute trajectories in real-time to achieve dynamic object grasping.
 
 
 ## Table of Contents
@@ -12,8 +12,11 @@ This project focuses on developing a dynamic trajectory planning system for a ro
 - [File Structure](#file-structure)
 - [User Guide](#user-guide)
   - [Running the Project](#running-the-project)
+  - [Algorithm Overview](#algorithm-ovreview)
   - [Training Video](training-video)
 - [Acknowledgments](#acknowledgments)
+- [Contribution](#contribution)
+- [License](#license)
 - [Contact](#contact)
 
 ## Getting Started
@@ -90,12 +93,55 @@ $ python ppo_controller_gpu.py
 
 This is main python file to launch gazebo environment of kinova arm , launch all necessary controllers, establish ros communication, start gym environment, setup PPO algorithm and then it will start training
 
+### Algorithm Overview
+
+1. Initialize PPO Agent
+2. Initialize Gazebo Environment
+3. Initialize Actor Network
+4. Initialize Critic Network
+5. Initialize Hyperparameters (learning rates, gamma, epsilon, lambda, etc.)
+6. For each episode:
+   a. Reset environment
+   b. While not done and within max timesteps:
+      i. Select action using current policy
+      ii. Take action, observe next state, reward, and done flag
+      iii. Store transition (state, action, reward, next_state, done)
+   c. Compute advantages and returns
+   d. For each epoch:
+      i. For each mini-batch:
+         i.1 Compute new action probabilities
+         i.2 Compute probability ratios
+         i.3 Compute surrogate objectives
+         i.4 Compute actor (policy) loss
+         i.5 Compute critic (value) loss
+         i.6 Compute total loss
+         i.7 Perform backpropagation
+         i.8 Update network parameters
+   e. Evaluate agent performance periodically
+   f. Save best model if performance improved
+7. Final evaluation
+
 ### Training Video
 
 https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning/assets/82582574/7c72c9ec-55e6-4e6b-bf67-a21a27a9c69c
 
 ### Acknowledgements
 1. Developers of [kinova-ros](https://github.com/Kinovarobotics/kinova-ros)
+
+### Contribution
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/Newfeature`)
+3. Commit your changes (`git commit -m 'Add some Newfeature'`)
+4. Push to the branch (`git push origin feature/Newfeature`)
+5. Open a Pull Request
+
+
+### License
+
+This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.
    
 ### Contact
 For questions or collaboration, please contact devgoti1683@gmail.com
