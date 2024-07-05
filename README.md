@@ -31,9 +31,11 @@ This project focuses on developing a dynamic trajectory planning system for a KI
 
 ### Setting up the environment
 
+```
 conda create -n myrosenv python=3.7
 conda activate myrosenv
 pip install -r requirements.txt
+```
 
 ### Installation
 
