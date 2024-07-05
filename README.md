@@ -1,4 +1,4 @@
-# Dynamic Trajectory Planning of a Robotic Arm using Deep Reinforcement Learning
+# Dynamic Trajectory Planning of a 7DOF Robotic Arm using Deep Reinforcement Learning
 
 ## Introduction
 This project focuses on developing a dynamic trajectory planning system for a KINOVA JACO2 7DOF robotic arm using Deep Reinforcement Learning (DRL). The objective is to enable the robotic arm to plan and execute trajectories in real-time to achieve dynamic object grasping.
@@ -29,7 +29,7 @@ This project focuses on developing a dynamic trajectory planning system for a KI
 - PyTorch 1.13.1
 - Other dependencies listed in `requirements.txt`
 
-- Note : When building ROS packages, it's important to install dependencies in the ROS environment and the development environment (such as a Conda environment). Here's how you can manage dependencies for building ROS packages:
+Note : When building ROS packages, it's important to install dependencies in the ROS environment and the development environment (such as a Conda environment). Here's how you can manage dependencies for building ROS packages:
 
 ROS Dependencies:Install ROS dependencies using ROS package manager (apt on Ubuntu) or from source if required by the package. Use ROS commands like rosdep to install system dependencies needed for building and running ROS packages.
 For example:
