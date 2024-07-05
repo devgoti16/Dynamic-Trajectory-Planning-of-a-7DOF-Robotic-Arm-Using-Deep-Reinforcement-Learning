@@ -67,17 +67,17 @@ $ caktin_make
 ```
 catkin_ws/src/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning-master
 │
-├── requirements.txt         # List of project dependencies
-├── README.md                # Project documentation
-├── kinova-ros/                  # Trained model checkpoints
-│   ├── kinova_{all_files_created_by_k
-│   ├── kinova_scripts/
+├── requirements.txt                                # List of project dependencies
+├── README.md                                       # Project documentation
+├── kinova-ros/                                     # Trained model checkpoints
+│   ├── kinova_{all_folders_of_kinova_developers}
+│   ├── kinova_scripts/                             #custom folder for files related to this project
 |       ├──launch/
-|          ├──position_control.launch  #Launches position control of kinova arm
-|          ├──velocity_control.launch  #Launches velocity control of kinova arm
+|          ├──position_control.launch               #Launches position control of kinova arm
+|          ├──velocity_control.launch               #Launches velocity control of kinova arm
 |       ├──src/
-|          ├──runs/                    # contains all the training result files which was done
-|          ├──ppo_controller_gpu.py    # main training file
+|          ├──runs/                                 # contains all the training result files which was done
+|          ├──ppo_controller_gpu.py                 # main training file
 |       ├──CMakeLists.txt
 |       ├──package.xml
 
