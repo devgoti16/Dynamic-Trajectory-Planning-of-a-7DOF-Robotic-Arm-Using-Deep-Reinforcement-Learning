@@ -37,6 +37,25 @@ conda activate myrosenv
 pip install -r requirements.txt
 ```
 
+Note : When building ROS packages, it's important to install dependencies in the ROS environment and the development environment (such as a Conda environment). Here's how you can manage dependencies for building ROS packages:
+
+ROS Dependencies:
+
+Install ROS dependencies using ROS package manager (apt on Ubuntu) or from source if required by the package.
+Use ROS commands like rosdep to install system dependencies needed for building and running ROS packages.
+For example:
+```
+sudo apt install ros-noetic-<package-name>
+rosdep install --from-paths <path-to-your-ros-package> --ignore-src -r -y
+```
+
+Python Dependencies:
+If your ROS package includes Python scripts or nodes, manage Python dependencies within a Conda environment. This ensures that Python dependencies are isolated and do not conflict with system-wide Python installations.
+Create a Conda environment specifically for your ROS project and install Python dependencies using Conda or pip within this environment
+
+Install Tenrflow, Tensorboard, PyTorch, Cuda in  conda environment
+
+
 ### Installation
 
 Create a catkin workspace
