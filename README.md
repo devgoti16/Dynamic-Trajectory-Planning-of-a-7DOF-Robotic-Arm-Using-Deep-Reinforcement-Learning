@@ -13,14 +13,6 @@ This project focuses on developing a dynamic trajectory planning system for a ro
 - [User Guide](#user-guide)
   - [Running the Project](#running-the-project)
   - [Training Video](training-video)
-- [Methodology](#methodology)
-- [Project Structure](#project-structure)
-- [Models and Training](#models-and-training)
-- [Experiments and Results](#experiments-and-results)
-- [Demo](#demo)
-
-- [Contributing](#contributing)
-- [License](#license)
 - [Acknowledgments](#acknowledgments)
 - [Contact](#contact)
 
@@ -102,7 +94,7 @@ This is main python file to launch gazebo environment of kinova arm , launch all
 
 https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning/assets/82582574/7c72c9ec-55e6-4e6b-bf67-a21a27a9c69c
 
-### Acknowledgement
+### Acknowledgements
 1. Developers of [kinova-ros](https://github.com/Kinovarobotics/kinova-ros)
    
 ### Contact
