@@ -16,6 +16,7 @@ This project focuses on developing a dynamic trajectory planning system for a ro
 - [Models and Training](#models-and-training)
 - [Experiments and Results](#experiments-and-results)
 - [Demo](#demo)
+- [File Structure](#file-structure)
 - [Contributing](#contributing)
 - [License](#license)
 - [Acknowledgments](#acknowledgments)
@@ -55,37 +56,26 @@ pip install -r requirements.txt
 ### Training Video
 
 
+https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning/assets/82582574/7c72c9ec-55e6-4e6b-bf67-a21a27a9c69c
 ### File Structure
 
-https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning/assets/82582574/7c72c9ec-55e6-4e6b-bf67-a21a27a9c69c
-
-
 ```
-project-root/
+catkin_ws/src/
 │
-├── ppo_controller_gpu.py    # Main script for PPO training on GPU
 ├── requirements.txt         # List of project dependencies
 ├── README.md                # Project documentation
-│
-├── models/                  # Trained model checkpoints
-│   ├── model_latest.pth
-│   └── model_best.pth
-│
-├── data/                    # Dataset and configuration files
-│   ├── robot_config.yaml
-│   └── environment_params.json
-│
-├── scripts/
-│   ├── preprocess_data.py   # Data preprocessing script
-│   └── evaluate_model.py    # Model evaluation script
-│
-├── utils/
-│   ├── env_wrapper.py       # Environment wrapper for RL
-│   └── custom_layers.py     # Custom neural network layers
-│
-└── results/                 # Output directory for logs and results
-├── training_logs/
-└── evaluation_results/
+├── kinova-ros/                  # Trained model checkpoints
+│   ├── kinova_{all_files_created_by_k
+│   ├── kinova_scripts/
+|       ├──launch/
+|          ├──position_control.launch  #Launches position control of kinova arm
+|          ├──velocity_control.launch  #Launches velocity control of kinova arm
+|       ├──src/
+|          ├──runs/                    # contains all the training result files which was done
+|          ├──ppo_controller_gpu.py    # main training file
+|       ├──CMakeLists.txt
+|       ├──package.xml
+
 ```
 
 ### Implementation
