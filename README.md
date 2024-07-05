@@ -27,6 +27,7 @@ This project focuses on developing a dynamic trajectory planning system for a ro
 ## Getting Started
 
 ### Prerequisites
+
 - Python 3.7
 - ROS Noetic
 - TensorFlow 1.15.0
@@ -34,11 +35,13 @@ This project focuses on developing a dynamic trajectory planning system for a ro
 - Other dependencies listed in `requirements.txt`
 
 ### Setting up the environment
+
 conda create -n myrosenv python=3.7
 conda activate myrosenv
 pip install -r requirements.txt
 
 ### Installation
+
 Create a catkin workspace
 ```sh
 $ mkdir catkin_ws/src
@@ -48,10 +51,10 @@ $ catkin_make
 
 To automatically source this workspace every time a new shell is launched, run these commands
 ```
-echo "source ~/ros_ws/devel/setup.bash" >> ~/.bashrc
+echo "source ~/catkin_ws/devel/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 ```
-Clone the repository in the src folder in the catkin workspace
+Clone the repository in the `src` folder in the catkin workspace
 ```
 $ cd ~/catkin_ws/src
 $ git clone https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning.git
@@ -86,6 +89,7 @@ catkin_ws/src/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinf
 ```
 
 ## User Guide
+
 ### Running the Project
 ```
 $ cd ~/catkin_ws/src/kinova-ros/kinova_scripts/src/
