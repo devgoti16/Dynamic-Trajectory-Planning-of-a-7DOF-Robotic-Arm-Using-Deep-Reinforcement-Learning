@@ -1,28 +1,30 @@
 # Dynamic Trajectory Planning of a Robotic Arm using Deep Reinforcement Learning
 
-## Description
+## Introduction
 This project focuses on developing a dynamic trajectory planning system for a robotic arm using Deep Reinforcement Learning (DRL). The objective is to enable the robotic arm to plan and execute trajectories in real-time to achieve dynamic object grasping.
 
+
 ## Table of Contents
-- [Installation](#installation)
+- [Getting Started](getting-started)
   - [Prerequisites](#prerequisites)
-  - [Cloning the Repository](#cloning-the-repository)
   - [Setting Up the Environment](#setting-up-the-environment)
-- [Usage](#usage)
+  - [Installation](#installation)
+- [File Structure](#file-structure)
+- [User Guide](#user-guide)
   - [Running the Project](#running-the-project)
-  - [Important Notes](#important-notes)
+  - [Training Video](training-video)
 - [Methodology](#methodology)
 - [Project Structure](#project-structure)
 - [Models and Training](#models-and-training)
 - [Experiments and Results](#experiments-and-results)
 - [Demo](#demo)
-- [File Structure](#file-structure)
+
 - [Contributing](#contributing)
 - [License](#license)
 - [Acknowledgments](#acknowledgments)
 - [Contact](#contact)
 
-## Installation
+## Getting Started
 
 ### Prerequisites
 - Python 3.7
@@ -36,31 +38,36 @@ conda create -n myrosenv python=3.7
 conda activate myrosenv
 pip install -r requirements.txt
 
-### Cloning the Repository
+### Installation
+Create a catkin workspace
 ```sh
 $ mkdir catkin_ws/src
 $ cd catkin_ws
 $ catkin_make
-$ cd src
+```
+
+To automatically source this workspace every time a new shell is launched, run these commands
+```
+echo "source ~/ros_ws/devel/setup.bash" >> ~/.bashrc
+source ~/.bashrc
+```
+Clone the repository in the src folder in the catkin workspace
+```
+$ cd ~/catkin_ws/src
 $ git clone https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning.git
-$ cd ..
+```
+
+Navigate back to workspace folder and build the packages
+```
+$ cd ~/catkin_ws
 $ caktin_make
 ```
 
-### Setting up the environment
-# Example for setting up a virtual environment
-conda create -n drl_robotic_arm python=3.8
-conda activate drl_robotic_arm
-pip install -r requirements.txt
 
-### Training Video
-
-
-https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning/assets/82582574/7c72c9ec-55e6-4e6b-bf67-a21a27a9c69c
 ### File Structure
 
 ```
-catkin_ws/src/
+catkin_ws/src/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning-master
 │
 ├── requirements.txt         # List of project dependencies
 ├── README.md                # Project documentation
@@ -78,9 +85,21 @@ catkin_ws/src/
 
 ```
 
-### Implementation
+## User Guide
+### Running the Project
+```
+$ cd ~/catkin_ws/src/kinova-ros/kinova_scripts/src/
+$ python ppo_controller_gpu.py
+````
 
-python ppo_controller_gpu.py
+This is main python file to launch gazebo environment of kinova arm , launch all necessary controllers, establish ros communication, start gym environment, setup PPO algorithm and then it will start training
 
+### Training Video
+
+https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning/assets/82582574/7c72c9ec-55e6-4e6b-bf67-a21a27a9c69c
+
+### Acknowledgement
+1. Developers of [kinova-ros](https://github.com/Kinovarobotics/kinova-ros)
+   
 ### Contact
 For questions or collaboration, please contact devgoti1683@gmail.com
