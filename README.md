@@ -95,32 +95,34 @@ This is main python file to launch gazebo environment of kinova arm , launch all
 
 ### Algorithm Overview
 
+
 1. Initialize PPO Agent
 2. Initialize Gazebo Environment
 3. Initialize Actor Network
 4. Initialize Critic Network
 5. Initialize Hyperparameters (learning rates, gamma, epsilon, lambda, etc.)
 6. For each episode:
-   a. Reset environment
-   b. While not done and within max timesteps:
-      i. Select action using current policy
-      ii. Take action, observe next state, reward, and done flag
-      iii. Store transition (state, action, reward, next_state, done)
-   c. Compute advantages and returns
-   d. For each epoch:
-      i. For each mini-batch:
-         i.1 Compute new action probabilities
-         i.2 Compute probability ratios
-         i.3 Compute surrogate objectives
-         i.4 Compute actor (policy) loss
-         i.5 Compute critic (value) loss
-         i.6 Compute total loss
-         i.7 Perform backpropagation
-         i.8 Update network parameters
-   e. Evaluate agent performance periodically
-   f. Save best model if performance improved
+   1. Reset environment
+   2. While not done and within max timesteps:
+      1. Select action using current policy
+      2. Take action, observe next state, reward, and done flag
+      3. Store transition (state, action, reward, next_state, done)
+   3. Compute advantages and returns
+   4. For each epoch:
+      1. For each mini-batch:
+         1. Compute new action probabilities
+         2. Compute probability ratios
+         3. Compute surrogate objectives
+         4. Compute actor (policy) loss
+         5. Compute critic (value) loss
+         6. Compute total loss
+         7. Perform backpropagation
+         8. Update network parameters
+   5. Evaluate agent performance periodically
+   6. Save best model if performance improved
 7. Final evaluation
 
+   
 ### Training Video
 
 https://github.com/devgoti16/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning/assets/82582574/7c72c9ec-55e6-4e6b-bf67-a21a27a9c69c
