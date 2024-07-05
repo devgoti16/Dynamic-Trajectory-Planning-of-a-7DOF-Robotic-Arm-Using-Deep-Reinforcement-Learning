@@ -1,0 +1,2 @@
+Episodes : 500, Max Timesteps : 1500, Evaluation Interval: 50. Evaluation Epsiodes : 15
+Gamma : 0.99, Epsilon : 0.2, Learning Rate : 0.0003, Lambda : 0.98, Epoch : 15, Batch size : 32

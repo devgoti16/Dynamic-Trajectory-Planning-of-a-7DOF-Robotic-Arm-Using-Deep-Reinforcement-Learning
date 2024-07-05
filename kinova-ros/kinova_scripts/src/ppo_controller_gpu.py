@@ -107,7 +107,6 @@ class Jaco2Env(gym.Env):
         velocities = msg.velocity[:7]
         with self.states_lock :
             self.states = angles + velocities
-        print(self.states)
 
     def get_current_state(self):
         """Get the current state of the robot."""
@@ -516,6 +515,33 @@ def log_metrics(filename,msg):
     with open(filename, 'a') as file:
         file.write(msg)
 
+def save_checkpoint(agent, episode, optimizer_state, filename):
+    checkpoint = {
+        'episode': episode,
+        'actor_state_dict': agent.actor_network.state_dict(),
+        'critic_state_dict': agent.critic_network.state_dict(),
+        'actor_optimizer_state_dict': agent.actor_optimizer.state_dict(),
+        'critic_optimizer_state_dict': agent.critic_optimizer.state_dict(),
+        'best_eval_reward': best_eval_reward
+    }
+    torch.save(checkpoint, filename)
+    print(f"Checkpoint saved: {filename}")
+
+def load_checkpoint(agent, filename):
+    if os.path.isfile(filename):
+        checkpoint = torch.load(filename)
+        agent.actor_network.load_state_dict(checkpoint['actor_state_dict'])
+        agent.critic_network.load_state_dict(checkpoint['critic_state_dict'])
+        agent.actor_optimizer.load_state_dict(checkpoint['actor_optimizer_state_dict'])
+        agent.critic_optimizer.load_state_dict(checkpoint['critic_optimizer_state_dict'])
+        start_episode = checkpoint['episode']
+        best_eval_reward = checkpoint['best_eval_reward']
+        print(f"Checkpoint loaded: {filename}")
+        return start_episode, best_eval_reward
+    else:
+        print(f"No checkpoint found at {filename}")
+        return 0, float('-inf')
+
 def evaluate(agent, env, num_episodes):
     """
     Evaluate the agent's performance.
@@ -568,12 +594,18 @@ if __name__ == '__main__':
     episode_rewards = []
     best_eval_reward = float('-inf')
 
+    
+
     # Set up TensorBoard logging and saving parameters in doc files
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     filename = f"runs/jaco2_ppo_{current_time}/{current_time}_logfile.txt"
     log_dir = f'runs/jaco2_ppo_{current_time}'
     writer = SummaryWriter(log_dir)
     log_metrics(filename,f"Episodes : {n_episodes}, Max Timesteps : {max_timesteps}, Evaluation Interval: {eval_interval}. Evaluation Epsiodes : {eval_epsiodes}\n")
+
+    checkpoint_dir = f'runs/jaco2_ppo_{current_time}/checkpoints'
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    checkpoint_file = os.path.join(checkpoint_dir, 'latest_checkpoint.pth')
 
     # Initialize the environment
     env = Jaco2Env()
@@ -586,10 +618,7 @@ if __name__ == '__main__':
     # Wait for ROS and Gazebo to initialize
     time.sleep(10)
 
-    
-
-    
-
+    start_episode, best_eval_reward = load_checkpoint(agent, checkpoint_file)
     print("Training begins")
 
 
@@ -642,6 +671,10 @@ if __name__ == '__main__':
             t_msgs = f"Epsiode : {i}, Reward : {score:.2f}, epsiode Length : {t+1}, Actor Loss : {agent.actor_loss:.2f}, Critic Loss : {agent.critic_loss:.2f}\n"
             log_metrics(filename,t_msgs)
             # Periodic evaluation
+
+            if (i + 1) % 10 == 0:  # Save every 10 episodes, adjust as needed
+                save_checkpoint(agent, i + 1, agent.actor_optimizer.state_dict(), checkpoint_file)
+
             if (i + 1) % eval_interval == 0:
                 mean_reward, std_reward, mean_length = evaluate(agent, env, eval_epsiodes)
                 writer.add_scalar('Evaluation/Mean Reward', mean_reward, i)
@@ -649,7 +682,7 @@ if __name__ == '__main__':
                 writer.add_scalar('Evaluation/Mean Episode Length', mean_length, i)              
                 print(f"Evaluation after {i+1} episodes: Mean reward: {mean_reward:.2f} ± {std_reward:.2f}, Mean length: {mean_length:.2f}")   
                 e_msgs = f"Evaluation after {i+1} episodes: Mean reward: {mean_reward:.2f} ± {std_reward:.2f}, Mean length: {mean_length:.2f}\n"
-                log_metrics(e_msgs)         
+                log_metrics(filename,e_msgs)         
                 
                 # Save the best model
                 if mean_reward > best_eval_reward:
@@ -658,9 +691,9 @@ if __name__ == '__main__':
                     print(f"New best model saved at episode {i+1}_{current_time}")
 
         print(episode_rewards)
-        agent.save_models(f'runs/jaco2_ppo_{current_time}')
+        agent.save_models(f'runs/jaco2_ppo_{current_time}/models')
         print("loading model")
-        agent.load_models(f'runs/jaco2_ppo_{current_time}')
+        agent.load_models(f'runs/jaco2_ppo_{current_time}/mpdels')
         print("model loaded")
 
         # Final evaluation
@@ -672,6 +705,7 @@ if __name__ == '__main__':
         writer.close()
 
     except rospy.ROSInterruptException:
+        save_checkpoint(agent, i + 1, agent.actor_optimizer.state_dict(), checkpoint_file)
         pass
     finally:
         rospy.signal_shutdown("Training complete")
