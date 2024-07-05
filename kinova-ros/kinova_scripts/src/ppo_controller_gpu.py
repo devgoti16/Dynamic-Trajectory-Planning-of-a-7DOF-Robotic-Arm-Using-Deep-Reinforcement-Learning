@@ -107,6 +107,7 @@ class Jaco2Env(gym.Env):
         velocities = msg.velocity[:7]
         with self.states_lock :
             self.states = angles + velocities
+        print(self.states)
 
     def get_current_state(self):
         """Get the current state of the robot."""
@@ -271,11 +272,12 @@ class ActorNetwork(nn.Module):
     """
     Actor network for the PPO algorithm.
     """
-    def __init__(self, n_actions, state_dim, fc1_dims=256, fc2_dims=128, chkpt_dir='tmp/ppo'):
+    def __init__(self, n_actions, state_dim, fc1_dims=256, fc2_dims=256, fc3_dims=128):
         super(ActorNetwork, self).__init__()
         self.fc1 = nn.Linear(state_dim, fc1_dims).to(device)
         self.fc2 = nn.Linear(fc1_dims, fc2_dims).to(device)
-        self.mean = nn.Linear(fc2_dims, n_actions).to(device)
+        self.fc3 = nn.Linear(fc2_dims, fc3_dims)
+        self.mean = nn.Linear(fc3_dims, n_actions).to(device)
         self.log_std = nn.Parameter(torch.zeros(n_actions).to(device))
 
     def forward(self, x):
@@ -291,6 +293,7 @@ class ActorNetwork(nn.Module):
         x = x.to(device)
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
+        x = torch.relu(self.fc3(x))
         mean = self.mean(x)
         std = self.log_std.exp()
         return mean, std
@@ -325,7 +328,7 @@ class Agent:
     """
     PPO Agent implementation.
     """
-    def __init__ (self, state_dim, action_dim, lr = 3e-3, gamma = 0.99, eps_clip = 0.2,epsilon = 0.2,lmbda = 0.95, epoch = 20, batch_size = 32):
+    def __init__ (self, state_dim, action_dim, lr = 3e-4, gamma = 0.99, eps_clip = 0.2,epsilon = 0.2,lmbda = 0.98, epoch = 15, batch_size = 32):
         self.actor_network = ActorNetwork(action_dim,state_dim).to(device)
         self.critic_network = CriticNetwork(state_dim).to(device)
         self.actor_optimizer = optim.Adam(self.actor_network.parameters(),lr = lr)
@@ -341,19 +344,20 @@ class Agent:
         self.critic_loss = 0
         self.actor_scheduler = optim.lr_scheduler.StepLR(self.actor_optimizer, step_size=100, gamma=0.9)
         self.critic_scheduler = optim.lr_scheduler.StepLR(self.critic_optimizer, step_size=100, gamma=0.9)
+        log_metrics(filename, f"Gamma : {gamma}, Epsilon : {epsilon}, Learning Rate : {lr}, Lambda : {lmbda}, Epoch : {epoch}, Batch size : {batch_size}\n")
 
-    def save_models(self, path='models'):
+    def save_models(self, path):
         """Save the actor and critic models."""
         if not os.path.exists(path):
             os.makedirs(path)
-        torch.save(self.actor_network.state_dict(), os.path.join(path, 'actor_{current_time}.pth'))
-        torch.save(self.critic_network.state_dict(), os.path.join(path, 'critic_{current_time}.pth'))
+        torch.save(self.actor_network.state_dict(), os.path.join(path, f'actor_{current_time}.pth'))
+        torch.save(self.critic_network.state_dict(), os.path.join(path, f'critic_{current_time}.pth'))
         print(f"Models saved to {path}")
 
-    def load_models(self, path='models'):
+    def load_models(self, path):
         """Load the actor and critic models."""
-        self.actor_network.load_state_dict(torch.load(os.path.join(path, 'actor.pth'), map_location=device))
-        self.critic_network.load_state_dict(torch.load(os.path.join(path, 'critic.pth'), map_location=device))
+        self.actor_network.load_state_dict(torch.load(os.path.join(path, f'actor_{current_time}.pth'), map_location=device))
+        self.critic_network.load_state_dict(torch.load(os.path.join(path, f'critic_{current_time}.pth'), map_location=device))
         print(f"Models loaded from {path}")
 
     def select_action(self,state):
@@ -374,7 +378,7 @@ class Agent:
         cov_matrix = torch.diag(std**2) 
         dist = MultivariateNormal(mean,covariance_matrix=cov_matrix)
         action = dist.sample()
-        action = 0.6*(torch.tanh(action))
+        action = torch.tanh(action)
         action_log_prob = dist.log_prob(action).sum(dim=-1)
         return action.cpu().detach().numpy()[0], action_log_prob.cpu().detach()
     
@@ -473,35 +477,46 @@ class Agent:
                 # Compute surrogate objectives
                 surr1 = ratios * batch_advantages
                 surr2 = torch.clamp(ratios, 1.0 - self.epsilon, 1.0 + self.epsilon) * batch_advantages
+
+                entropy = dist.entropy().mean()
                 
                 # Compute actor (policy) loss
-                policy_loss = -torch.min(surr1, surr2).mean()
-                
+                policy_loss = -torch.min(surr1, surr2).mean() - 0.01 * entropy
+
                 # Compute critic (value) loss
                 value_pred = self.critic_network(batch_states).squeeze()
                 value_loss = F.mse_loss(value_pred, batch_returns)
-                
-                # Compute total loss
-                total_loss = policy_loss + 0.5 * value_loss
-                
-                # Perform backpropagation
-                self.actor_optimizer.zero_grad()
+
+                # Compute actor (policy) loss
+                # Note: Assuming policy_loss is already computed
+
+                # Perform backpropagation for critic
                 self.critic_optimizer.zero_grad()
-                total_loss.backward()
-                
-                # Clip gradients to prevent exploding gradients
-                torch.nn.utils.clip_grad_norm_(self.actor_network.parameters(), max_norm=0.5)
+                value_loss.backward()
+                # Clip gradients for critic
                 torch.nn.utils.clip_grad_norm_(self.critic_network.parameters(), max_norm=0.5)
-                
-                # Update network parameters
-                self.actor_optimizer.step()
+                # Update critic network parameters
                 self.critic_optimizer.step()
+                self.critic_scheduler.step()
+
+                # Perform backpropagation for actor
+                self.actor_optimizer.zero_grad()
+                policy_loss.backward()
+                # Clip gradients for actor
+                torch.nn.utils.clip_grad_norm_(self.actor_network.parameters(), max_norm=0.5)
+                # Update actor network parameters
+                self.actor_optimizer.step()
+                self.actor_scheduler.step()
         
         # Store the final loss values for logging
         self.actor_loss = policy_loss.item()
         self.critic_loss = value_loss.item()
 
-def evaluate(agent, env, num_episodes=10):
+def log_metrics(filename,msg):
+    with open(filename, 'a') as file:
+        file.write(msg)
+
+def evaluate(agent, env, num_episodes):
     """
     Evaluate the agent's performance.
     
@@ -539,6 +554,27 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
+    # Training parameters
+    # actor_lr = 0.001
+    # critic_lr = 0.001
+    batch_size = 32
+    TIME_DELTA = 0
+    n_episodes = 500
+    max_timesteps = 1500
+    eval_interval = 50
+    eval_epsiodes = 15
+
+    # Initialize lists and variables for tracking progress
+    episode_rewards = []
+    best_eval_reward = float('-inf')
+
+    # Set up TensorBoard logging and saving parameters in doc files
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"runs/jaco2_ppo_{current_time}/{current_time}_logfile.txt"
+    log_dir = f'runs/jaco2_ppo_{current_time}'
+    writer = SummaryWriter(log_dir)
+    log_metrics(filename,f"Episodes : {n_episodes}, Max Timesteps : {max_timesteps}, Evaluation Interval: {eval_interval}. Evaluation Epsiodes : {eval_epsiodes}\n")
+
     # Initialize the environment
     env = Jaco2Env()
     print("observation space dimension :", env.observation_space.shape[0])
@@ -550,26 +586,13 @@ if __name__ == '__main__':
     # Wait for ROS and Gazebo to initialize
     time.sleep(10)
 
-    # Training parameters
-    actor_lr = 0.001
-    critic_lr = 0.001
-    batch_size = 32
-    TIME_DELTA = 0
-    n_episodes = 500
-    max_timesteps = 1500
-    eval_interval = 100
+    
 
-    # Initialize lists and variables for tracking progress
-    episode_rewards = []
-    evaluate_interval = 100
-    best_eval_reward = float('-inf')
-
-    # Set up TensorBoard logging
-    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    log_dir = f'runs/jaco2_ppo_{current_time}'
-    writer = SummaryWriter(log_dir)
+    
 
     print("Training begins")
+
+
 
     try:
         for i in range(n_episodes):
@@ -616,29 +639,34 @@ if __name__ == '__main__':
             writer.add_scalar('Training/Actor Loss', agent.actor_loss, i)
             writer.add_scalar('Training/Critic Loss', agent.critic_loss, i)
 
+            t_msgs = f"Epsiode : {i}, Reward : {score:.2f}, epsiode Length : {t+1}, Actor Loss : {agent.actor_loss:.2f}, Critic Loss : {agent.critic_loss:.2f}\n"
+            log_metrics(filename,t_msgs)
             # Periodic evaluation
             if (i + 1) % eval_interval == 0:
-                mean_reward, std_reward, mean_length = evaluate(agent, env)
+                mean_reward, std_reward, mean_length = evaluate(agent, env, eval_epsiodes)
                 writer.add_scalar('Evaluation/Mean Reward', mean_reward, i)
                 writer.add_scalar('Evaluation/Std Reward', std_reward, i)
                 writer.add_scalar('Evaluation/Mean Episode Length', mean_length, i)              
-                print(f"Evaluation after {i+1} episodes: Mean reward: {mean_reward:.2f} ± {std_reward:.2f}, Mean length: {mean_length:.2f}")              
+                print(f"Evaluation after {i+1} episodes: Mean reward: {mean_reward:.2f} ± {std_reward:.2f}, Mean length: {mean_length:.2f}")   
+                e_msgs = f"Evaluation after {i+1} episodes: Mean reward: {mean_reward:.2f} ± {std_reward:.2f}, Mean length: {mean_length:.2f}\n"
+                log_metrics(e_msgs)         
                 
                 # Save the best model
                 if mean_reward > best_eval_reward:
                     best_eval_reward = mean_reward
-                    agent.save_models(f'best_model_episode_{i+1}')
-                    print(f"New best model saved at episode {i+1}")
+                    agent.save_models(f'runs/jaco2_ppo_{current_time}/best_model_episode_{i+1}_{current_time}')
+                    print(f"New best model saved at episode {i+1}_{current_time}")
 
         print(episode_rewards)
-        agent.save_models()
+        agent.save_models(f'runs/jaco2_ppo_{current_time}')
         print("loading model")
-        agent.load_models()
+        agent.load_models(f'runs/jaco2_ppo_{current_time}')
         print("model loaded")
 
         # Final evaluation
         final_mean_reward, final_std_reward, final_mean_length = evaluate(agent, env, num_episodes=50)
         print(f"Final evaluation: Mean reward: {final_mean_reward:.2f} ± {final_std_reward:.2f}, Mean length: {final_mean_length:.2f}")
+        log_metrics(filename,f"Final evaluation: Mean reward: {final_mean_reward:.2f} ± {final_std_reward:.2f}, Mean length: {final_mean_length:.2f}\n")
 
         # Close TensorBoard writer
         writer.close()
