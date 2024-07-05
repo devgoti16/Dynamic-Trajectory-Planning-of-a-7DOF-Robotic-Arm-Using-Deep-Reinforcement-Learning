@@ -96,6 +96,14 @@ class Jaco2Env(gym.Env):
         self.joint_lower_limits = [-2*np.pi, 47/180*np.pi, -2*np.pi, 30/180*np.pi, -2*np.pi, 65/180*np.pi, -2*np.pi]
         self.joint_upper_limits = [2*np.pi, 313/180*np.pi, 2*np.pi, 330/180*np.pi, 2*np.pi, 295/180*np.pi, 2*np.pi]
         self.joint_velocity_limits = [36/180*np.pi, 36/180*np.pi, 36/180*np.pi, 36/180*np.pi, 48/180*np.pi, 48/180*np.pi, 48/180*np.pi]
+        self.w1 = 0.2
+        self.w2 = 0.5
+        self.w3 = 0.05
+        self.w4 = 0.01
+        self.w5 = 0.01
+        self.w6 = 0.01
+        log_metrics(filename,f"weights for rewards -- w1 : {self.w1}, w2 : {self.w2}, w3 : {self.w3}, w4 : {self.w4}, w5 : {self.w5}, w6 : {self.w6}\n")
+
 
     def run_callback(self):
         """Run ROS callbacks in a separate thread."""
@@ -134,26 +142,26 @@ class Jaco2Env(gym.Env):
         distance_reward = -distance
         joint_angles = current_position[:7]
         progress = previous_distance - distance if previous_distance is not None else 0
-        progress_reward = 30 * progress if progress > 0 else -500
-        action_smoothness = -0.1 * np.sum(np.square(action - previous_action)) if previous_action is not None else 0
-        energy_penalty = -0.1* np.sum(np.square(action))
+        progress_reward = 3 * progress if progress > 0 else -50
+        action_smoothness = -np.sum(np.square(action - previous_action)) if previous_action is not None else 0
+        energy_penalty = -np.sum(np.square(action))
         joint_limit_penalty = -sum(abs(pos - limit[0]) + abs(pos - limit[1])  for pos,limit in zip(joint_angles, zip(self.joint_lower_limits,self.joint_upper_limits)))
         velocity_limit_penalty = -sum(abs(vel)/limit for vel,limit in zip(action,self.joint_velocity_limits))
 
         
         reward = (
-            0.35 * distance_reward +
-            0.1 * progress_reward +
-            0.2 * action_smoothness + 
-            0.02 * energy_penalty+
-            0.05 * joint_limit_penalty + 
-            0.01 * velocity_limit_penalty
+            self.w1 * distance_reward +
+            self.w2 * progress_reward +
+            self.w3 * action_smoothness + 
+            self.w4 * energy_penalty+
+            self.w5 * joint_limit_penalty + 
+            self.w6 * velocity_limit_penalty
         )
 
-        reward = reward/1000
+        reward = reward/100
         
         if distance < 0.3:
-            reward += 100
+            reward += 200
 
         #print(reward)
         return reward
@@ -233,7 +241,7 @@ class Jaco2Env(gym.Env):
         # Calculate reward and check if done
         distance_to_goal = np.linalg.norm(end_effector_position - self.goal_position)     
         reward = self.calculate_reward(distance_to_goal, current_state, action, self.last_action, self.last_distance)
-        done = distance_to_goal < 0.5
+        done = distance_to_goal < 0.3
 
         self.last_distance = distance_to_goal
         self.last_action = action
@@ -271,13 +279,15 @@ class ActorNetwork(nn.Module):
     """
     Actor network for the PPO algorithm.
     """
-    def __init__(self, n_actions, state_dim, fc1_dims=256, fc2_dims=256, fc3_dims=128):
+    def __init__(self, n_actions, state_dim, fc1_dims=256, fc2_dims=128, fc3_dims = 128,fc4_dims = 64):
         super(ActorNetwork, self).__init__()
         self.fc1 = nn.Linear(state_dim, fc1_dims).to(device)
         self.fc2 = nn.Linear(fc1_dims, fc2_dims).to(device)
-        self.fc3 = nn.Linear(fc2_dims, fc3_dims)
+        self.fc3 = nn.Linear(fc2_dims, fc3_dims).to(device)
+        self.fc4 = nn.Linear(fc3_dims, fc4_dims).to(device)
         self.mean = nn.Linear(fc3_dims, n_actions).to(device)
         self.log_std = nn.Parameter(torch.zeros(n_actions).to(device))
+        log_metrics(filename, f"Actor Network -- Dimension of each Layer -- Layer 1 :{fc1_dims}, Layer 2 : {fc2_dims}, Layer 3 : {fc3_dims}, Layer 4 : {fc4_dims}, Output Layer : {n_actions}\n")
 
     def forward(self, x):
         """
@@ -301,11 +311,12 @@ class CriticNetwork(nn.Module):
     """
     Critic network for the PPO algorithm.
     """
-    def __init__(self, state_dim, fc1_dims=256, fc2_dims=128, chkpt_dir='tmp/ppo'):
+    def __init__(self, state_dim, fc1_dims=256, fc2_dims=128):
         super(CriticNetwork, self).__init__()
         self.fc1 = nn.Linear(state_dim, fc1_dims).to(device)
         self.fc2 = nn.Linear(fc1_dims, fc2_dims).to(device)
         self.value = nn.Linear(fc2_dims, 1).to(device)
+        log_metrics(filename, f"Critick Network -- Dimension of each layer -- Layer 1 : {fc1_dims}, Layer 2 : {fc2_dims}, Output Layer : {1}\n")
 
     def forward(self, x):
         """
@@ -327,7 +338,7 @@ class Agent:
     """
     PPO Agent implementation.
     """
-    def __init__ (self, state_dim, action_dim, lr = 3e-4, gamma = 0.99, eps_clip = 0.2,epsilon = 0.2,lmbda = 0.98, epoch = 15, batch_size = 32):
+    def __init__ (self, state_dim, action_dim, lr = 3e-4, gamma = 0.99, eps_clip = 0.15,epsilon = 0.2,lmbda = 0.95, epoch = 10, batch_size = 64):
         self.actor_network = ActorNetwork(action_dim,state_dim).to(device)
         self.critic_network = CriticNetwork(state_dim).to(device)
         self.actor_optimizer = optim.Adam(self.actor_network.parameters(),lr = lr)
@@ -372,13 +383,16 @@ class Agent:
         with torch.no_grad():
             state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
             mean, std = self.actor_network(state)
+        if torch.isnan(mean).any() or torch.isnan(std).any():
+            print("NaN values detected in action selection")
+            return np.zeros(7), torch.tensor(0.0)
         mean = torch.nan_to_num(mean, nan=0.0)
         std = torch.nan_to_num(std, nan=1.0)
         cov_matrix = torch.diag(std**2) 
         dist = MultivariateNormal(mean,covariance_matrix=cov_matrix)
         action = dist.sample()
-        action = torch.tanh(action)
         action_log_prob = dist.log_prob(action).sum(dim=-1)
+        action = 2 * torch.tanh(action)
         return action.cpu().detach().numpy()[0], action_log_prob.cpu().detach()
     
     def compute_advantages(self, rewards, values, next_values, dones):
@@ -431,7 +445,10 @@ class Agent:
         rewards = torch.tensor(np.array(rewards), dtype=torch.float32).to(device)
         next_states = torch.tensor(np.array(next_states), dtype=torch.float32).to(device)
         dones = torch.tensor(np.array(dones), dtype=torch.bool).to(device)
-        
+
+        #remove if not requireds 
+        #rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
+
         with torch.no_grad():
             # Compute state values
             values = self.critic_network(states).squeeze().to(device)
@@ -460,7 +477,7 @@ class Agent:
                 batch_states = states[batch_indices]
                 batch_actions = actions[batch_indices]
                 batch_log_probs = old_log_probs[batch_indices]
-                batch_returns = returns[batch_indices]
+                batch_returns = returns[batch_indices].squeeze()
                 batch_advantages = advantages[batch_indices]
                 
                 # Compute new action probabilities
@@ -470,7 +487,7 @@ class Agent:
                 
                 # Compute probability ratio
                 log_ratio = new_log_probs - batch_log_probs
-                log_ratio = torch.clamp(log_ratio, -20, 20)  # Prevent numerical instability
+                #log_ratio = torch.clamp(log_ratio, -20, 20)  # Prevent numerical instability #------------------------------------------------------------------
                 ratios = torch.exp(log_ratio)
                 
                 # Compute surrogate objectives
@@ -480,11 +497,11 @@ class Agent:
                 entropy = dist.entropy().mean()
                 
                 # Compute actor (policy) loss
-                policy_loss = -torch.min(surr1, surr2).mean() - 0.01 * entropy
+                policy_loss = -torch.min(surr1, surr2).mean() - 0.0005* entropy
 
                 # Compute critic (value) loss
                 value_pred = self.critic_network(batch_states).squeeze()
-                value_loss = F.mse_loss(value_pred, batch_returns)
+                value_loss = F.mse_loss(value_pred, batch_returns,reduction = 'mean')
 
                 # Compute actor (policy) loss
                 # Note: Assuming policy_loss is already computed
@@ -493,7 +510,7 @@ class Agent:
                 self.critic_optimizer.zero_grad()
                 value_loss.backward()
                 # Clip gradients for critic
-                torch.nn.utils.clip_grad_norm_(self.critic_network.parameters(), max_norm=0.5)
+                torch.nn.utils.clip_grad_norm_(self.critic_network.parameters(), max_norm=0.7)
                 # Update critic network parameters
                 self.critic_optimizer.step()
                 self.critic_scheduler.step()
@@ -502,7 +519,7 @@ class Agent:
                 self.actor_optimizer.zero_grad()
                 policy_loss.backward()
                 # Clip gradients for actor
-                torch.nn.utils.clip_grad_norm_(self.actor_network.parameters(), max_norm=0.5)
+                torch.nn.utils.clip_grad_norm_(self.actor_network.parameters(), max_norm=0.7)
                 # Update actor network parameters
                 self.actor_optimizer.step()
                 self.actor_scheduler.step()
@@ -515,7 +532,7 @@ def log_metrics(filename,msg):
     with open(filename, 'a') as file:
         file.write(msg)
 
-def save_checkpoint(agent, episode, optimizer_state, filename):
+def save_checkpoint(agent, episode, filename):
     checkpoint = {
         'episode': episode,
         'actor_state_dict': agent.actor_network.state_dict(),
@@ -525,7 +542,6 @@ def save_checkpoint(agent, episode, optimizer_state, filename):
         'best_eval_reward': best_eval_reward
     }
     torch.save(checkpoint, filename)
-    print(f"Checkpoint saved: {filename}")
 
 def load_checkpoint(agent, filename):
     if os.path.isfile(filename):
@@ -605,7 +621,7 @@ if __name__ == '__main__':
 
     checkpoint_dir = f'runs/jaco2_ppo_{current_time}/checkpoints'
     os.makedirs(checkpoint_dir, exist_ok=True)
-    checkpoint_file = os.path.join(checkpoint_dir, 'latest_checkpoint.pth')
+
 
     # Initialize the environment
     env = Jaco2Env()
@@ -617,8 +633,6 @@ if __name__ == '__main__':
 
     # Wait for ROS and Gazebo to initialize
     time.sleep(10)
-
-    start_episode, best_eval_reward = load_checkpoint(agent, checkpoint_file)
     print("Training begins")
 
 
@@ -662,7 +676,11 @@ if __name__ == '__main__':
             writer.add_scalar('Training/Episode Length', t+1, i)
 
             # Update the agent
-            agent.learn(trajectories)
+            try :
+                agent.learn(trajectories)
+            except RuntimeError as e :
+                print(f"Error during learning : {e}")
+                continue
 
             # Log loss metrics
             writer.add_scalar('Training/Actor Loss', agent.actor_loss, i)
@@ -673,7 +691,9 @@ if __name__ == '__main__':
             # Periodic evaluation
 
             if (i + 1) % 10 == 0:  # Save every 10 episodes, adjust as needed
-                save_checkpoint(agent, i + 1, agent.actor_optimizer.state_dict(), checkpoint_file)
+                timeee = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                checkpoint_file = os.path.join(checkpoint_dir, f'latest_checkpoint_{timeee}.pth')
+                save_checkpoint(agent, i + 1, checkpoint_file)
 
             if (i + 1) % eval_interval == 0:
                 mean_reward, std_reward, mean_length = evaluate(agent, env, eval_epsiodes)
@@ -705,7 +725,9 @@ if __name__ == '__main__':
         writer.close()
 
     except rospy.ROSInterruptException:
-        save_checkpoint(agent, i + 1, agent.actor_optimizer.state_dict(), checkpoint_file)
+        timeee = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        checkpoint_file = os.path.join(checkpoint_dir, f'latest_checkpoint_{timeee}.pth')
+        save_checkpoint(agent, i + 1,checkpoint_file)
         pass
     finally:
         rospy.signal_shutdown("Training complete")

@@ -1,0 +1,55 @@
+Episodes : 500, Max Timesteps : 1500, Evaluation Interval: 50. Evaluation Epsiodes : 15
+weights for rewards -- w1 : 0.2, w2 : 0.5, w3 : 0.05, w4 : 0.01, w5 : 0.01, w6 : 0.01
+Actor Network -- Dimension of each Layer -- Layer 1 :256, Layer 2 : 128, Layer 3 : 128, Layer 4 : 64, Output Layer : 7
+Critick Network -- Dimension of each layer -- Layer 1 : 256, Layer 2 : 128, Output Layer : 1
+Gamma : 0.99, Epsilon : 0.2, Learning Rate : 0.0003, Lambda : 0.95, Epoch : 10, Batch size : 64
+Epsiode : 0, Reward : -232.60, epsiode Length : 1500, Actor Loss : -0.92, Critic Loss : 9.06
+Epsiode : 1, Reward : -225.98, epsiode Length : 1500, Actor Loss : -1.52, Critic Loss : 4.43
+Epsiode : 2, Reward : -230.89, epsiode Length : 1500, Actor Loss : -0.37, Critic Loss : 3.86
+Epsiode : 3, Reward : -224.98, epsiode Length : 1500, Actor Loss : -0.92, Critic Loss : 8.03
+Epsiode : 4, Reward : -230.78, epsiode Length : 1500, Actor Loss : 0.85, Critic Loss : 0.66
+Epsiode : 5, Reward : -251.49, epsiode Length : 1500, Actor Loss : -0.30, Critic Loss : 2.90
+Epsiode : 6, Reward : -242.83, epsiode Length : 1500, Actor Loss : -0.31, Critic Loss : 1.72
+Epsiode : 7, Reward : -233.06, epsiode Length : 1500, Actor Loss : -0.13, Critic Loss : 1.26
+Epsiode : 8, Reward : -234.24, epsiode Length : 1500, Actor Loss : 0.20, Critic Loss : 0.46
+Epsiode : 9, Reward : -248.51, epsiode Length : 1500, Actor Loss : -0.20, Critic Loss : 0.84
+Epsiode : 10, Reward : -246.77, epsiode Length : 1500, Actor Loss : 0.33, Critic Loss : 1.24
+Epsiode : 11, Reward : -236.72, epsiode Length : 1500, Actor Loss : -0.42, Critic Loss : 1.67
+Epsiode : 12, Reward : -239.23, epsiode Length : 1500, Actor Loss : 0.51, Critic Loss : 0.58
+Epsiode : 13, Reward : -241.12, epsiode Length : 1500, Actor Loss : 0.23, Critic Loss : 0.23
+Epsiode : 14, Reward : -241.41, epsiode Length : 1500, Actor Loss : -0.09, Critic Loss : 0.67
+Epsiode : 15, Reward : -237.77, epsiode Length : 1500, Actor Loss : 0.02, Critic Loss : 0.71
+Epsiode : 16, Reward : -248.23, epsiode Length : 1500, Actor Loss : 0.02, Critic Loss : 0.64
+Epsiode : 17, Reward : -246.30, epsiode Length : 1500, Actor Loss : -0.13, Critic Loss : 0.67
+Epsiode : 18, Reward : -238.38, epsiode Length : 1500, Actor Loss : 0.88, Critic Loss : 0.79
+Epsiode : 19, Reward : -244.70, epsiode Length : 1500, Actor Loss : -0.26, Critic Loss : 0.85
+Epsiode : 20, Reward : -240.25, epsiode Length : 1500, Actor Loss : 0.12, Critic Loss : 0.23
+Epsiode : 21, Reward : -235.65, epsiode Length : 1500, Actor Loss : 0.10, Critic Loss : 0.93
+Epsiode : 22, Reward : -248.39, epsiode Length : 1500, Actor Loss : -0.41, Critic Loss : 1.29
+Epsiode : 23, Reward : -241.46, epsiode Length : 1500, Actor Loss : 1.23, Critic Loss : 2.64
+Epsiode : 24, Reward : -246.21, epsiode Length : 1500, Actor Loss : 1.12, Critic Loss : 0.48
+Epsiode : 25, Reward : -255.00, epsiode Length : 1500, Actor Loss : -0.56, Critic Loss : 3.51
+Epsiode : 26, Reward : -246.70, epsiode Length : 1500, Actor Loss : 1.48, Critic Loss : 1.37
+Epsiode : 27, Reward : -237.59, epsiode Length : 1500, Actor Loss : -0.46, Critic Loss : 2.05
+Epsiode : 28, Reward : -250.14, epsiode Length : 1500, Actor Loss : 0.10, Critic Loss : 0.50
+Epsiode : 29, Reward : -254.66, epsiode Length : 1500, Actor Loss : 0.37, Critic Loss : 1.94
+Epsiode : 30, Reward : -244.78, epsiode Length : 1500, Actor Loss : -0.34, Critic Loss : 0.95
+Epsiode : 31, Reward : -246.02, epsiode Length : 1500, Actor Loss : -0.13, Critic Loss : 0.84
+Epsiode : 32, Reward : -244.57, epsiode Length : 1500, Actor Loss : 0.12, Critic Loss : 0.30
+Epsiode : 33, Reward : -254.29, epsiode Length : 1500, Actor Loss : 0.58, Critic Loss : 0.96
+Epsiode : 34, Reward : -242.33, epsiode Length : 1500, Actor Loss : -0.23, Critic Loss : 0.78
+Epsiode : 35, Reward : -237.31, epsiode Length : 1500, Actor Loss : -0.26, Critic Loss : 1.41
+Epsiode : 36, Reward : -233.34, epsiode Length : 1500, Actor Loss : 0.06, Critic Loss : 0.61
+Epsiode : 37, Reward : -248.31, epsiode Length : 1500, Actor Loss : 0.30, Critic Loss : 0.81
+Epsiode : 38, Reward : -255.11, epsiode Length : 1500, Actor Loss : -0.22, Critic Loss : 1.62
+Epsiode : 39, Reward : -248.69, epsiode Length : 1500, Actor Loss : 0.20, Critic Loss : 0.45
+Epsiode : 40, Reward : -240.21, epsiode Length : 1500, Actor Loss : 1.76, Critic Loss : 1.14
+Epsiode : 41, Reward : -247.68, epsiode Length : 1500, Actor Loss : -0.60, Critic Loss : 2.94
+Epsiode : 42, Reward : -246.77, epsiode Length : 1500, Actor Loss : -0.24, Critic Loss : 1.64
+Epsiode : 43, Reward : -239.06, epsiode Length : 1500, Actor Loss : 0.73, Critic Loss : 1.48
+Epsiode : 44, Reward : -236.73, epsiode Length : 1500, Actor Loss : -0.08, Critic Loss : 0.42
+Epsiode : 45, Reward : -242.88, epsiode Length : 1500, Actor Loss : -0.18, Critic Loss : 0.73
+Epsiode : 46, Reward : -242.53, epsiode Length : 1500, Actor Loss : 0.13, Critic Loss : 0.15
+Epsiode : 47, Reward : -239.10, epsiode Length : 1500, Actor Loss : -0.36, Critic Loss : 2.12
+Epsiode : 48, Reward : -245.37, epsiode Length : 1500, Actor Loss : 0.26, Critic Loss : 0.65
+Epsiode : 49, Reward : -239.75, epsiode Length : 1500, Actor Loss : 0.68, Critic Loss : 0.53
