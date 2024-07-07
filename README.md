@@ -13,6 +13,7 @@ This project focuses on developing a dynamic trajectory planning system for a KI
 - [User Guide](#user-guide)
   - [Running the Project](#running-the-project)
   - [Algorithm Overview](#algorithm-ovreview)
+  - [Features of the code](#features-of-the-code)
   - [Training Video](training-video)
 - [Acknowledgments](#acknowledgments)
 - [Contribution](#contribution)
@@ -145,6 +146,21 @@ It's important to note that this script is designed to run in a ROS environment 
    6. Save best model if performance improved
 7. Final evaluation
 
+### Features of the code
+
+1. Integration of ROS and Gazebo with Reinforcement Learning: The code seamlessly integrates Robot Operating System (ROS) and Gazebo simulator with a reinforcement learning framework. This allows for training a RL agent on a highly realistic robotic simulation, bridging the gap between machine learning and robotics.
+
+2. Dynamic Goal Updating: The environment features a dynamic goal-setting mechanism. The goal position is slightly perturbed in each step, adding an extra layer of complexity and realism to the task.
+
+3. Comprehensive Reward Function: The reward calculation is highly detailed, considering factors such as distance to goal, progress towards the goal, action smoothness, energy consumption, joint limit violations, and velocity limit violations. This multi-faceted approach encourages the agent to learn a more nuanced and realistic control policy.
+
+4. Robust Error Handling and Checkpointing: The script includes mechanisms to handle potential errors during the learning process and implements a regular checkpointing system. This allows for recovery from unexpected interruptions and provides a way to resume training from specific points.
+
+5. Extensive Logging and Visualization: The code uses both TensorBoard and custom logging to track a wide variety of metrics throughout the training process. This includes detailed per-episode logs and periodic evaluation results.
+
+6. Gradient Clipping: To prevent exploding gradients, the code implements gradient clipping for both the actor and critic networks during the learning process.
+
+7. Entropy Regularization: The PPO implementation includes an entropy term in the loss function, which can help encourage exploration and prevent premature convergence to suboptimal policies.
    
 ### Training Video
 
