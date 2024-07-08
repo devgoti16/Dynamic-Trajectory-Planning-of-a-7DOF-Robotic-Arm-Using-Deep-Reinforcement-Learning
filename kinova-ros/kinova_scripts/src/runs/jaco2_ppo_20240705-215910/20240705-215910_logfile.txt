@@ -53,3 +53,5 @@ Epsiode : 46, Reward : -242.53, epsiode Length : 1500, Actor Loss : 0.13, Critic
 Epsiode : 47, Reward : -239.10, epsiode Length : 1500, Actor Loss : -0.36, Critic Loss : 2.12
 Epsiode : 48, Reward : -245.37, epsiode Length : 1500, Actor Loss : 0.26, Critic Loss : 0.65
 Epsiode : 49, Reward : -239.75, epsiode Length : 1500, Actor Loss : 0.68, Critic Loss : 0.53
+Evaluation after 50 episodes: Mean reward: -217.21 ± 112.61, Mean length: 1400.73
+Epsiode : 50, Reward : -316.16, epsiode Length : 1500, Actor Loss : 1.79, Critic Loss : 6.65

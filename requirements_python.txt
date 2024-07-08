@@ -313,6 +313,7 @@ tomli @ file:///opt/conda/conda-bld/tomli_1657175507142/work
 tomlkit @ file:///tmp/abs_56_0lnnq5x/croots/recipe/tomlkit_1658946880479/work
 topic-tools==1.16.0
 torch==1.13.1+cu116
+torch-tb-profiler==0.4.3
 torchaudio==0.13.1
 torchvision==0.14.1+cu116
 tornado @ file:///opt/conda/conda-bld/tornado_1662061693373/work

@@ -352,6 +352,7 @@ class Agent:
         self.MseLoss = nn.MSELoss()
         self.actor_loss = 0
         self.critic_loss = 0
+        self.total_loss = 0
         self.actor_scheduler = optim.lr_scheduler.StepLR(self.actor_optimizer, step_size=100, gamma=0.9)
         self.critic_scheduler = optim.lr_scheduler.StepLR(self.critic_optimizer, step_size=100, gamma=0.9)
         log_metrics(filename, f"Gamma : {gamma}, Epsilon : {epsilon}, Learning Rate : {lr}, Lambda : {lmbda}, Epoch : {epoch}, Batch size : {batch_size}\n")
@@ -497,7 +498,7 @@ class Agent:
                 entropy = dist.entropy().mean()
                 
                 # Compute actor (policy) loss
-                policy_loss = -torch.min(surr1, surr2).mean() - 0.0005* entropy
+                policy_loss =  - (torch.min(surr1, surr2).mean() + 0.005* entropy)
 
                 # Compute critic (value) loss
                 value_pred = self.critic_network(batch_states).squeeze()
@@ -506,27 +507,43 @@ class Agent:
                 # Compute actor (policy) loss
                 # Note: Assuming policy_loss is already computed
 
-                # Perform backpropagation for critic
-                self.critic_optimizer.zero_grad()
-                value_loss.backward()
-                # Clip gradients for critic
-                torch.nn.utils.clip_grad_norm_(self.critic_network.parameters(), max_norm=0.7)
-                # Update critic network parameters
-                self.critic_optimizer.step()
-                self.critic_scheduler.step()
+                total_loss = policy_loss + 0.5* value_loss
 
-                # Perform backpropagation for actor
+                # # Perform backpropagation for critic
+                # self.critic_optimizer.zero_grad()
+                # value_loss.backward()
+                # # Clip gradients for critic
+                # torch.nn.utils.clip_grad_norm_(self.critic_network.parameters(), max_norm=0.7)
+                # # Update critic network parameters
+                # self.critic_optimizer.step()
+                # self.critic_scheduler.step()
+
+                # # Perform backpropagation for actor
+                # self.actor_optimizer.zero_grad()
+                # policy_loss.backward()
+                # # Clip gradients for actor
+                # torch.nn.utils.clip_grad_norm_(self.actor_network.parameters(), max_norm=0.7)
+                # # Update actor network parameters
+                # self.actor_optimizer.step()
+                # self.actor_scheduler.step()
+
+                self.critic_optimizer.zero_grad()
                 self.actor_optimizer.zero_grad()
-                policy_loss.backward()
-                # Clip gradients for actor
-                torch.nn.utils.clip_grad_norm_(self.actor_network.parameters(), max_norm=0.7)
-                # Update actor network parameters
+
+                total_loss.backward()
+
+                torch.nn.utils.clip_grad_norm_(self.critic_network.parameters(), max_norm=0.5)
+                torch.nn.utils.clip_grad_norm_(self.actor_network.parameters(), max_norm=0.5)
+
+                self.critic_optimizer.step()
                 self.actor_optimizer.step()
+                self.critic_scheduler.step()               
                 self.actor_scheduler.step()
-        
+
         # Store the final loss values for logging
         self.actor_loss = policy_loss.item()
         self.critic_loss = value_loss.item()
+        self.total_loss = total_loss.item()
 
 def log_metrics(filename,msg):
     with open(filename, 'a') as file:
@@ -685,6 +702,7 @@ if __name__ == '__main__':
             # Log loss metrics
             writer.add_scalar('Training/Actor Loss', agent.actor_loss, i)
             writer.add_scalar('Training/Critic Loss', agent.critic_loss, i)
+            writer.add_scalar('Training/Total Loss', agent.total_loss,i)
 
             t_msgs = f"Epsiode : {i}, Reward : {score:.2f}, epsiode Length : {t+1}, Actor Loss : {agent.actor_loss:.2f}, Critic Loss : {agent.critic_loss:.2f}\n"
             log_metrics(filename,t_msgs)
