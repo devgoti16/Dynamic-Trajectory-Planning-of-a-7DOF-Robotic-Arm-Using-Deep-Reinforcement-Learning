@@ -28,29 +28,31 @@ This project focuses on developing a dynamic trajectory planning system for a KI
 - ROS Noetic
 - TensorFlow 1.15.0
 - PyTorch 1.13.1
-- Other dependencies listed in `requirements.txt`
+- Other dependencies listed in `requirements_python.txt` and `requirements_ros.txt`
 
 Note : When building ROS packages, it's important to install dependencies in the ROS environment and the development environment (such as a Conda environment). Here's how you can manage dependencies for building ROS packages:
 
-ROS Dependencies:Install ROS dependencies using ROS package manager (apt on Ubuntu) or from source if required by the package. Use ROS commands like rosdep to install system dependencies needed for building and running ROS packages.
+ROS Dependencies:
+Install ROS dependencies using ROS package manager (apt on Ubuntu) or from source if required by the package. Use ROS commands like rosdep to install system dependencies needed for building and running ROS packages.
 For example:
 ```
 sudo apt install ros-noetic-<package-name>
 rosdep install --from-paths <path-to-your-ros-package> --ignore-src -r -y
 ```
+All the ros dependencies are mentioned in `requirements_ros.txt` file. Install all the required ROS dependencies as mentioned above
 
 Python Dependencies:
 If your ROS package includes Python scripts or nodes, manage Python dependencies within a Conda environment. This ensures that Python dependencies are isolated and do not conflict with system-wide Python installations.
 Create a Conda environment specifically for your ROS project and install Python dependencies using Conda or pip within this environment
 
-Install Tenrflow, Tensorboard, PyTorch, Cuda in  conda environment (which is explained in next section)
+Install all the python dependencies are in the `requirements_python.txt` file
 
 ### Setting up the environment
 
 ```
 conda create -n myrosenv python=3.7
 conda activate myrosenv
-pip install -r requirements.txt
+pip install -r requirements_python.txt
 ```
 `requiremet.txt` files contains all the python dependencies that is needed in conda environment
 
