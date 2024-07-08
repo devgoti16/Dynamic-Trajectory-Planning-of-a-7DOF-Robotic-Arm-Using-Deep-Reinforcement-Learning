@@ -54,7 +54,7 @@ conda create -n myrosenv python=3.7
 conda activate myrosenv
 pip install -r requirements_python.txt
 ```
-`requiremet.txt` files contains all the python dependencies that is needed in conda environment
+`requirements_python.txt` files contains all the python dependencies that is needed in conda environment
 
 ### Installation
 
