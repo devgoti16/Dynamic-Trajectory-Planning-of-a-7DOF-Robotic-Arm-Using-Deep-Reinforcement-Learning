@@ -96,12 +96,12 @@ class Jaco2Env(gym.Env):
         self.joint_lower_limits = [-2*np.pi, 47/180*np.pi, -2*np.pi, 30/180*np.pi, -2*np.pi, 65/180*np.pi, -2*np.pi]
         self.joint_upper_limits = [2*np.pi, 313/180*np.pi, 2*np.pi, 330/180*np.pi, 2*np.pi, 295/180*np.pi, 2*np.pi]
         self.joint_velocity_limits = [36/180*np.pi, 36/180*np.pi, 36/180*np.pi, 36/180*np.pi, 48/180*np.pi, 48/180*np.pi, 48/180*np.pi]
-        self.w1 = 0.2
-        self.w2 = 0.5
-        self.w3 = 0.05
-        self.w4 = 0.01
-        self.w5 = 0.01
-        self.w6 = 0.01
+        self.w1 = 0.3  # Increase importance of distance to goal
+        self.w2 = 0.4  # Slightly reduce progress reward
+        self.w3 = 0.1  # Increase action smoothness importance
+        self.w4 = 0.05  # Increase energy penalty
+        self.w5 = 0.05  # Increase joint limit penalty
+        self.w6 = 0.05  # Increase velocity limit penalty
         log_metrics(filename,f"weights for rewards -- w1 : {self.w1}, w2 : {self.w2}, w3 : {self.w3}, w4 : {self.w4}, w5 : {self.w5}, w6 : {self.w6}\n")
 
 
@@ -338,7 +338,7 @@ class Agent:
     """
     PPO Agent implementation.
     """
-    def __init__ (self, state_dim, action_dim, lr = 3e-4, gamma = 0.99, eps_clip = 0.15,epsilon = 0.2,lmbda = 0.95, epoch = 10, batch_size = 64):
+    def __init__ (self, state_dim, action_dim, lr = 3e-4, gamma = 0.99,epsilon = 0.2,lmbda = 0.95, epoch = 10, batch_size = 32):
         self.actor_network = ActorNetwork(action_dim,state_dim).to(device)
         self.critic_network = CriticNetwork(state_dim).to(device)
         self.actor_optimizer = optim.Adam(self.actor_network.parameters(),lr = lr)
@@ -348,7 +348,6 @@ class Agent:
         self.lmbda = lmbda
         self.epochs = epoch
         self.batch_size = batch_size
-        self.eps_clip = eps_clip
         self.MseLoss = nn.MSELoss()
         self.actor_loss = 0
         self.critic_loss = 0
@@ -448,7 +447,7 @@ class Agent:
         dones = torch.tensor(np.array(dones), dtype=torch.bool).to(device)
 
         #remove if not requireds 
-        #rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
+        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
 
         with torch.no_grad():
             # Compute state values
@@ -498,7 +497,7 @@ class Agent:
                 entropy = dist.entropy().mean()
                 
                 # Compute actor (policy) loss
-                policy_loss =  - (torch.min(surr1, surr2).mean() + 0.005* entropy)
+                policy_loss =  - (torch.min(surr1, surr2).mean() + 0.01* entropy)
 
                 # Compute critic (value) loss
                 value_pred = self.critic_network(batch_states).squeeze()

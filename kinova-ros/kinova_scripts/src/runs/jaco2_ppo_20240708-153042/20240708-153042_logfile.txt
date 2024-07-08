@@ -1,0 +1,4 @@
+Episodes : 500, Max Timesteps : 1500, Evaluation Interval: 50. Evaluation Epsiodes : 15
+weights for rewards -- w1 : 0.3, w2 : 0.4, w3 : 0.1, w4 : 0.05, w5 : 0.05, w6 : 0.05
+Actor Network -- Dimension of each Layer -- Layer 1 :256, Layer 2 : 128, Layer 3 : 128, Layer 4 : 64, Output Layer : 7
+Critick Network -- Dimension of each layer -- Layer 1 : 256, Layer 2 : 128, Output Layer : 1
