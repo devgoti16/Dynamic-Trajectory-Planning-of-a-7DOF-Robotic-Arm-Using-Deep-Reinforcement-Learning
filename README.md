@@ -86,9 +86,10 @@ $ caktin_make
 ### File Structure
 
 ```
-catkin_ws/src/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning-master
+catkin_ws/src/Dynamic-Trajectory-Planning-of-a-7DOF-Robotic-Arm-Using-Deep-Reinforcement-Learning
 │
-├── requirements.txt                                # List of project dependencies
+├── requirements_python.txt
+├── requirements_ros.txt                            
 ├── README.md                                       # Project documentation
 ├── kinova-ros/                                     # Trained model checkpoints
 │   ├── kinova_{all_folders_of_kinova_developers}
