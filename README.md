@@ -30,6 +30,8 @@ This project focuses on developing a dynamic trajectory planning system for a KI
 - PyTorch 1.13.1
 - Other dependencies listed in `requirements_python.txt` and `requirements_ros.txt`
 
+This project was runned on system with Ubuntu 20.04.k LTS, x86_64 architecture on Intel(R) Xenon(R) CPU with 12 CPU cores and at 3.07GHz. System also has gpu of NVIDIA Corporation GP102 [GeForce GTX 1080 Ti]
+
 Note : When building ROS packages, it's important to install dependencies in the ROS environment and the development environment (such as a Conda environment). Here's how you can manage dependencies for building ROS packages:
 
 ROS Dependencies:
