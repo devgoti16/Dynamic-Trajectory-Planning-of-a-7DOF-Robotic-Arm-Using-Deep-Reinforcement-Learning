@@ -190,4 +190,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.
    
 ### Contact
-For questions or collaboration, please contact devgoti1683@gmail.com
+For questions or collaboration, please contact 
